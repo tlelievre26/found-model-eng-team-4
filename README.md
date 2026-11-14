@@ -100,3 +100,54 @@ Budget alerts do not automatically stop the VM.
 
 The final VM location and connection details will be
 shared internally once provisioning succeeds.
+
+
+### Infrastructure Setup Scripts
+
+Run the following commands once the GPU VM has been
+successfully provisioned and OS Login has been enabled.
+
+#### 1. Initialize shared storage
+
+From the repository root, run:
+
+```bash
+sudo bash scripts/setup_shared.sh USERNAME1 USERNAME2 USERNAME3 USERNAME4 USERNAME5
+```
+
+Replace the placeholders with the actual Linux usernames
+obtained using `whoami` on the VM.
+
+This script creates the shared directories, configures
+group permissions, and adds team members to the shared group.
+
+All members should reconnect via SSH and verify their
+group membership and shared directory access.
+
+#### 2. Download the base model
+
+After shared storage has been configured, one team member
+should run:
+
+```bash
+bash scripts/download_model.sh
+```
+
+The model will be stored at:
+
+`/shared/models/Qwen3-4B-Instruct-2507`
+
+Other team members should reuse this local model rather
+than downloading separate copies.
+
+#### 3. Verification
+
+```bash
+nvidia-smi
+ls -ld /shared /shared/*
+du -sh /shared/models/Qwen3-4B-Instruct-2507
+```
+
+The setup scripts are currently untested on the target VM.
+End-to-end verification is pending GPU availability.
+
