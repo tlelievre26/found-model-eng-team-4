@@ -47,8 +47,9 @@ from typing import Any
 import torch
 import wandb
 
-# Shared W&B project. Override with the WANDB_PROJECT / WANDB_ENTITY env vars.
-DEFAULT_PROJECT = "found-model-eng-team-4"
+# Shared W&B team and project. Override with the WANDB_ENTITY / WANDB_PROJECT env vars.
+DEFAULT_ENTITY = "tjl2152-columbia-university"
+DEFAULT_PROJECT = "FME-project"
 # Hourly price of the team VM (L4 GPU), used to estimate run cost.
 DEFAULT_GPU_HOURLY_USD = 0.71
 
@@ -91,7 +92,7 @@ class RunLogger:
         }
         self.run = wandb.init(
             project=project or os.environ.get("WANDB_PROJECT", DEFAULT_PROJECT),
-            entity=entity or os.environ.get("WANDB_ENTITY"),
+            entity=entity or os.environ.get("WANDB_ENTITY", DEFAULT_ENTITY),
             name=name,
             group=group,
             tags=tags,

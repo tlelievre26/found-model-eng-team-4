@@ -133,7 +133,7 @@ python scripts/wandb_smoke_test.py                       # logs a run to W&B
 WANDB_MODE=disabled python scripts/wandb_smoke_test.py   # W&B off, prints the summary only
 ```
 
-Use `WANDB_MODE=disabled` for quick local tests. Runs go to the `found-model-eng-team-4` project; set `WANDB_ENTITY` to the team name (and `WANDB_PROJECT` to override the project) in your `~/.bashrc`.
+Use `WANDB_MODE=disabled` for quick local tests. Runs go to the `FME-project` project in the `tjl2152-columbia-university` team by default. To log somewhere else (e.g. a personal sandbox), set `WANDB_ENTITY` and/or `WANDB_PROJECT`, or pass `entity=` / `project=` to `start_run`.
 
 ## Team usage rules
 - **Work on a branch.** Clone into your own home directory, create a branch for your work, and merge into `main` through a pull request.
