@@ -99,6 +99,42 @@ source ~/.bashrc
 
 Get your keys from https://wandb.ai/authorize and https://huggingface.co/settings/tokens.
 
+## Logging runs to W&B
+
+Every training and eval run should log to the shared W&B project through [`src/utils/wandb_logging.py`](src/utils/wandb_logging.py). It records the full config, git commit, GPU type, wall-clock time, peak GPU memory, and estimated cost (hours × $0.71/hr for the L4 VM).
+
+```python
+from src.utils import wandb_logging as wl
+
+with wl.start_run("lora-r16-lr2e-4", config):          # config: dict or dataclass
+    tokens_seen = 0
+    for step, batch in enumerate(loader, start=1):
+        loss = train_step(batch)
+        tokens_seen += int(batch["attention_mask"].sum())   # real tokens, not padding
+        if step % 10 == 0:
+            wl.log_train(step, tokens_seen, loss=loss, lr=scheduler.get_last_lr()[0])
+        if step % 500 == 0:
+            wl.log_eval({"accuracy": evaluate(model)})
+# leaving the block logs the time / memory / cost summary, even if training crashes
+```
+
+For an eval-only script, use `wl.start_run(name, config, job_type="eval")` and call `wl.log_eval(...)`. You can also call `wl.start_run(...)` and `wl.finish_run()` yourself instead of using `with`.
+
+What shows up in W&B:
+- `train/*` and `eval/*`: your metrics plotted against optimizer step.
+- `train_vs_tokens/*` and `eval_vs_tokens/*`: the same metrics plotted against tokens processed, so runs with different batch sizes or sequence lengths can be compared by compute.
+- `perf/*`: GPU memory (allocated / reserved / peak), tokens per second, elapsed hours, running cost.
+- Run summary: `gpu_name`, `wall_clock_hours`, `peak_gpu_mem_gb`, `est_cost_usd`, `final_step`, `total_tokens_seen`.
+
+To check your setup, run the dummy script:
+
+```bash
+python scripts/wandb_smoke_test.py                       # logs a run to W&B
+WANDB_MODE=disabled python scripts/wandb_smoke_test.py   # W&B off, prints the summary only
+```
+
+Use `WANDB_MODE=disabled` for quick local tests. Runs go to the `found-model-eng-team-4` project; set `WANDB_ENTITY` to the team name (and `WANDB_PROJECT` to override the project) in your `~/.bashrc`.
+
 ## Team usage rules
 - **Work on a branch.** Clone into your own home directory, create a branch for your work, and merge into `main` through a pull request.
 - **Large files go in `/shared`, never in git.** This includes data, model weights, and checkpoints. MedAbstain's license (CC-BY-NC) means we must not re-upload it.
