@@ -1,2 +1,119 @@
 # found-model-eng-team-4
 This is the repo for our small medical question answering model we are building as a part of the Foundation Model Engineering course
+
+## Shared directory
+
+All large files — data, model weights, and checkpoints — live in one shared folder on the team VM, **never in git**:
+
+```
+/shared/
+  models/        # base model weights (HF_HOME points here so nobody re-downloads)
+  data/          # raw downloads + processed splits
+  checkpoints/   # one folder per training run: <your-name>-<short-description>-<date>/
+```
+
+### Rules for `/shared`
+- **Don't delete or overwrite files you didn't create.** Ask the owner in the group chat first.
+- **Name checkpoint folders `<your-name>-<short-description>-<date>/`**, e.g. `taylor-lora-r16-2026-11-15/`. Use `paths.run_checkpoint_dir(...)` (below) to get this right automatically.
+- **Never re-upload MedAbstain anywhere.** Its license is CC-BY-NC; it stays in `/shared/data` only.
+- **Point `HF_HOME` at `/shared/models`** so Hugging Face loads the shared copy of the base model (`Qwen/Qwen3-4B-Instruct-2507`) instead of downloading it again. Add this to your `~/.bashrc` on the VM:
+  ```bash
+  export HF_HOME=/shared/models
+  ```
+
+### Using `paths.py`
+[`src/utils/paths.py`](src/utils/paths.py) is the **only** place shared paths are defined. Never hard-code `/shared/...` anywhere else — import from `paths` instead:
+
+```python
+from src.utils import paths
+
+paths.SHARED_DIR       # /shared
+paths.MODELS_DIR       # /shared/models
+paths.DATA_DIR         # /shared/data
+paths.CHECKPOINTS_DIR  # /shared/checkpoints
+
+# Checkpoint folder for a new run, following the naming convention:
+out_dir = paths.run_checkpoint_dir("taylor", "lora-r16")  # /shared/checkpoints/taylor-lora-r16-<today>
+out_dir.mkdir(parents=True, exist_ok=True)
+```
+
+The shared root comes from the `FME_SHARED_DIR` environment variable and defaults to `/shared`. On the VM you don't need to set anything. To run the code on another machine (e.g. your laptop), point it at a local folder with the same layout:
+
+```bash
+export FME_SHARED_DIR=~/fme_shared
+```
+
+If you need a new shared location (e.g. a new subfolder), add it to `paths.py` in a PR rather than building the path inline.
+
+## Getting started
+
+### 1. SSH into the VM
+VM setup is tracked in #2. Once the VM is running:
+
+```bash
+gcloud compute ssh <vm-name> --zone <zone>
+```
+
+Check the VM is up and the GPU is visible with `nvidia-smi`.
+
+### 2. Clone the repo into your home directory
+Everyone works in their **own** clone in their home directory — never edit someone else's checkout.
+
+```bash
+cd ~
+git clone git@github.com:tlelievre26/found-model-eng-team-4.git
+cd found-model-eng-team-4
+```
+
+### 3. Create an environment and install the package
+Python 3.11+ is required.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+`-e` installs the package in editable mode, so your code changes take effect without reinstalling. Dependencies are pinned to exact versions in [`pyproject.toml`](pyproject.toml) — change them only through a PR so everyone stays on the same stack.
+
+### 4. Check it works
+
+```bash
+python -c "from src.utils import paths; print(paths.MODELS_DIR, paths.DATA_DIR, paths.CHECKPOINTS_DIR)"
+# /shared/models /shared/data /shared/checkpoints
+pytest
+```
+
+### 5. Set up your API keys
+Put W&B and Hugging Face keys in your own environment (e.g. `~/.bashrc`) or a git-ignored `.env` file in the repo root — **never commit them**.
+
+```bash
+WANDB_API_KEY=...
+HF_TOKEN=...
+```
+
+## Team usage rules
+- **Work on a branch.** Clone into your own home directory, create a branch for your work, and merge into `main` through a pull request.
+- **Large files go in `/shared`, never in git.** This includes data, model weights, and checkpoints. MedAbstain's license (CC-BY-NC) means we must not re-upload it.
+- **There is one GPU — share it.**
+  - Check `nvidia-smi` before starting anything.
+  - Run long jobs inside `tmux` so they survive disconnects (`tmux new -s <name>`, detach with `Ctrl-b d`, reattach with `tmux attach -t <name>`).
+  - Tell the group chat before starting a long run.
+- **Don't delete or overwrite files in `/shared` that you didn't create.**
+- **API keys stay out of the repo.** Keep W&B and Hugging Face keys in your own environment or a git-ignored `.env`.
+- **Stop the VM when you're done** and nobody else is using it — it costs money while running.
+
+## Repo layout
+
+```
+src/              # importable package (import as `src`, e.g. `from src.utils import paths`)
+  data/           # dataset loading + prompt formatting
+  models/         # model wrapper
+  training/       # training script(s)
+  eval/           # evaluation + metrics
+  utils/          # W&B logging, paths, misc helpers
+configs/          # YAML config files for runs
+scripts/          # entry points you run from the command line
+tests/            # quick checks (pytest)
+```

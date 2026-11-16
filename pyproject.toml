@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fme"
+version = "0.1.0"
+description = "Small medical question answering model for the Foundation Model Engineering course"
+requires-python = ">=3.11"
+# Pinned to exact versions so everyone on the VM runs the same stack.
+# Bump versions in a PR, never ad hoc.
+dependencies = [
+    "torch==2.15.0",
+    "transformers==5.23.0",
+    "peft==0.21.3",
+    "bitsandbytes==0.50.2",
+    "datasets==5.2.0",
+    "accelerate==1.15.0",
+    "wandb==0.31.0",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0"]
+
+[tool.setuptools.packages.find]
+include = ["src", "src.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
