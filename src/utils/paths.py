@@ -11,7 +11,6 @@ another machine, point it somewhere else:
 """
 
 import os
-from datetime import date
 from pathlib import Path
 
 DEFAULT_SHARED_DIR = "/shared"
@@ -22,17 +21,6 @@ SHARED_DIR = Path(os.environ.get("FME_SHARED_DIR", DEFAULT_SHARED_DIR)).expandus
 MODELS_DIR = SHARED_DIR / "models"
 # Raw downloads + processed splits.
 DATA_DIR = SHARED_DIR / "data"
-# One folder per training run: <your-name>-<short-description>-<date>/
+# Training run outputs.
 CHECKPOINTS_DIR = SHARED_DIR / "checkpoints"
 
-
-def run_checkpoint_dir(name: str, description: str, run_date: date | None = None) -> Path:
-    """Return the checkpoint folder for a training run, following the team convention.
-
-    Example: ``run_checkpoint_dir("taylor", "lora-r16")`` ->
-    ``<CHECKPOINTS_DIR>/taylor-lora-r16-2026-11-15``.
-
-    The folder is not created; call ``.mkdir(parents=True)`` when you are ready to write.
-    """
-    run_date = run_date or date.today()
-    return CHECKPOINTS_DIR / f"{name}-{description}-{run_date.isoformat()}"

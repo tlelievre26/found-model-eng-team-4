@@ -1,5 +1,4 @@
 import importlib
-from datetime import date
 from pathlib import Path
 
 from src.utils import paths
@@ -20,9 +19,3 @@ def test_env_override(monkeypatch, tmp_path):
     assert reloaded.SHARED_DIR == tmp_path
     assert reloaded.MODELS_DIR == tmp_path / "models"
 
-
-def test_run_checkpoint_dir(monkeypatch):
-    monkeypatch.delenv("FME_SHARED_DIR", raising=False)
-    reloaded = importlib.reload(paths)
-    result = reloaded.run_checkpoint_dir("taylor", "lora-r16", date(2026, 11, 15))
-    assert result == Path("/shared/checkpoints/taylor-lora-r16-2026-11-15")

@@ -9,16 +9,15 @@ All large files — data, model weights, and checkpoints — live in one shared 
 /shared/
   models/        # base model weights (HF_HOME points here so nobody re-downloads)
   data/          # raw downloads + processed splits
-  checkpoints/   # one folder per training run: <your-name>-<short-description>-<date>/
+  checkpoints/   # training run outputs
 ```
 
 ### Rules for `/shared`
-- **Don't delete or overwrite files you didn't create.** Ask the owner in the group chat first.
-- **Name checkpoint folders `<your-name>-<short-description>-<date>/`**, e.g. `taylor-lora-r16-2026-11-15/`. Use `paths.run_checkpoint_dir(...)` (below) to get this right automatically.
+- **Don't delete or overwrite files you didn't create.** Ask the owner on Slack first.
 - **Never re-upload MedAbstain anywhere.** Its license is CC-BY-NC; it stays in `/shared/data` only.
-- **Point `HF_HOME` at `/shared/models`** so Hugging Face loads the shared copy of the base model (`Qwen/Qwen3-4B-Instruct-2507`) instead of downloading it again. Add this to your `~/.bashrc` on the VM:
+- **Point `HF_HOME` at `/shared/models`** so Hugging Face loads the shared copy of the base model (`Qwen/Qwen3-4B-Instruct-2507`) instead of downloading it again. Run this once on the VM:
   ```bash
-  export HF_HOME=/shared/models
+  echo 'export HF_HOME=/shared/models' >> ~/.bashrc && source ~/.bashrc
   ```
 
 ### Using `paths.py`
@@ -31,10 +30,6 @@ paths.SHARED_DIR       # /shared
 paths.MODELS_DIR       # /shared/models
 paths.DATA_DIR         # /shared/data
 paths.CHECKPOINTS_DIR  # /shared/checkpoints
-
-# Checkpoint folder for a new run, following the naming convention:
-out_dir = paths.run_checkpoint_dir("taylor", "lora-r16")  # /shared/checkpoints/taylor-lora-r16-<today>
-out_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 The shared root comes from the `FME_SHARED_DIR` environment variable and defaults to `/shared`. On the VM you don't need to set anything. To run the code on another machine (e.g. your laptop), point it at a local folder with the same layout:
@@ -86,12 +81,23 @@ pytest
 ```
 
 ### 5. Set up your API keys
-Put W&B and Hugging Face keys in your own environment (e.g. `~/.bashrc`) or a git-ignored `.env` file in the repo root — **never commit them**.
+Keys live in your own `~/.bashrc` — **never commit them**. Run each command below and paste your key when prompted. The key isn't shown on screen or saved to your shell history.
 
 ```bash
-WANDB_API_KEY=...
-HF_TOKEN=...
+read -rsp "W&B API key: " key && echo "export WANDB_API_KEY=$key" >> ~/.bashrc && unset key && echo
 ```
+
+```bash
+read -rsp "Hugging Face token: " key && echo "export HF_TOKEN=$key" >> ~/.bashrc && unset key && echo
+```
+
+Then reload your shell:
+
+```bash
+source ~/.bashrc
+```
+
+Get your keys from https://wandb.ai/authorize and https://huggingface.co/settings/tokens.
 
 ## Team usage rules
 - **Work on a branch.** Clone into your own home directory, create a branch for your work, and merge into `main` through a pull request.
@@ -99,7 +105,7 @@ HF_TOKEN=...
 - **There is one GPU — share it.**
   - Check `nvidia-smi` before starting anything.
   - Run long jobs inside `tmux` so they survive disconnects (`tmux new -s <name>`, detach with `Ctrl-b d`, reattach with `tmux attach -t <name>`).
-  - Tell the group chat before starting a long run.
+  - If the GPU is unavailable, please message in the Slack to coordinate.
 - **Don't delete or overwrite files in `/shared` that you didn't create.**
 - **API keys stay out of the repo.** Keep W&B and Hugging Face keys in your own environment or a git-ignored `.env`.
 - **Stop the VM when you're done** and nobody else is using it — it costs money while running.
