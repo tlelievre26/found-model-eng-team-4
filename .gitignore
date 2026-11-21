@@ -218,3 +218,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- Project-specific ----
+# Large files live in /shared on the VM, never in git (see README).
+# Leading slash anchors to repo root so src/data/ is NOT ignored.
+/data/
+/checkpoints/
+/models/
+/outputs/
+wandb/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+# API keys
+.env
+.env.*
