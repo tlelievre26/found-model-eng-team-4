@@ -15,6 +15,7 @@ dependencies = [
     "peft==0.21.3",
     "bitsandbytes==0.50.2",
     "datasets==5.2.0",
+    "rapidfuzz==3.14.6",
     "accelerate==1.15.0",
     "wandb==0.31.0",
     "pyyaml==6.0.3",
@@ -28,3 +29,6 @@ include = ["src", "src.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_data: needs the built splits and network access, slow; skipped unless --run-real-data is given",
+]

@@ -8,6 +8,8 @@ import pytest
 from src.data.medqa_datasets import data
 from src.data.medqa_datasets.data import LETTERS, SPLIT_SIZES, exact_key, leak_key, load_medqa_raw, load_splits, split_names
 
+pytestmark = pytest.mark.real_data  # needs the built splits and network access; run with --run-real-data
+
 NAMES = ["medmcqa", "medqa"]
 ROOT = Path(__file__).resolve().parents[1]  # the repo root (contains src/)
 

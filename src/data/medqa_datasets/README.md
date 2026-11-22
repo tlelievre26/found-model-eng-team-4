@@ -50,7 +50,7 @@ src/data/medqa_datasets/
 └── splits_build_and_analysis.ipynb   Colab: clones the repo, builds the splits, runs the tests, analysis cells,
                                       prints the README numbers
 tests/
-├── test_data.py                      Needs the real data: leakage, no shared questions, similarity filter,
+├── test_data.py                      real_data (--run-real-data): leakage, no shared questions, similarity filter,
 │                                     determinism in fresh processes, format, config guard
 ├── test_subsets.py                   Offline: subset carving, similarity filter, guard on subsets
 ├── test_dedupe_logic.py              Offline: key functions and the two-tier dedupe on tiny examples
@@ -138,7 +138,7 @@ Total removed: 18333 (all MedMCQA). Removed copies whose correct answer text dif
 
 1. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `FME_SHARED_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
 2. Check your copy: run the checksum cell and compare with the reference checksums in the Reproducibility section.
-3. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q tests` (33 tests; about 8 minutes on Colab because two fresh builds recompute the similarity search; the first run also downloads the data).
+3. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q`. Plain `pytest` runs only the offline tests: the tests in `tests/test_data.py` are marked `real_data` and skipped by default, because they need the built data and network access and take minutes. To run them too, add `--run-real-data` (about 8 minutes on Colab because two fresh builds recompute the similarity search).
 
 ## Reproducibility
 
