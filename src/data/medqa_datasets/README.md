@@ -17,8 +17,11 @@ Example format (any number of options is supported):
 
 ```python
 {"id": "medmcqa-123", "source": "medmcqa", "question": "...",
- "options": {"A": "...", "B": "...", "C": "...", "D": "..."}, "answer": "B"}
+ "options": {"A": "...", "B": "...", "C": "...", "D": "..."}, "answer": "B",
+ "explanation": "..."}   # or None
 ```
+
+`explanation` is optional and currently unused. For MedMCQA it is the dataset's `exp` field with surrounding whitespace stripped (`None` if empty or missing); for MedQA it is always `None`. It is not cleaned or filtered further, is not part of any deduplication or similarity key, and does not appear in the prompt. It is kept for possible explanation-based SFT later.
 
 ## What each split is for
 

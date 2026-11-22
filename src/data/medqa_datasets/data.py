@@ -2,7 +2,7 @@
 
 Entry point: load_splits("medmcqa" | "medqa") -> {split name: [examples]}
 MedMCQA: train, hp_dev, calib, thresh, test.  MedQA: train, val, test.
-Example format: {"id", "source", "question", "options": {"A": ..., "B": ...}, "answer": "B"}
+Example format: {"id", "source", "question", "options": {"A": ..., "B": ...}, "answer": "B", "explanation": str | None}
 """
 import hashlib
 import importlib.metadata
@@ -117,6 +117,7 @@ def load_medmcqa_raw() -> dict:
                 "question": r["question"].strip(),
                 "options": {LETTERS[i]: str(o).strip() for i, o in enumerate(opts)},
                 "answer": LETTERS[r["cop"]],
+                "explanation": (r.get("exp") or "").strip() or None,  # kept for possible explanation SFT; unused so far
             })
         out[ours] = rows
     return out
@@ -137,6 +138,7 @@ def load_medqa_raw() -> dict:
                 "question": r["question"].strip(),
                 "options": opts,
                 "answer": r["answer_idx"],
+                "explanation": None,  # MedQA has no explanations
             })
         out[split] = rows
     return out

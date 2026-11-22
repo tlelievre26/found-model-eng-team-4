@@ -102,6 +102,7 @@ def test_format_all_rows(splits):
                 assert e["answer"] in e["options"], e["id"]
                 assert e["source"] == n and e["id"].startswith(n + "-"), e["id"]
                 assert e["question"].strip(), e["id"]
+                assert e["explanation"] is None or (n == "medmcqa" and e["explanation"].strip()), e["id"]
 
 
 def test_medqa_test_is_untouched(splits):

@@ -78,6 +78,14 @@ def test_dedupe_within_drop_conflicts():
     assert [r["id"] for r in kept] == ["4"] and removed == 3 and conflicts == 1
 
 
+def test_medmcqa_explanation_field(monkeypatch):
+    row = {"id": "x", "question": "Q?", "opa": "a", "opb": "b", "opc": "c", "opd": "d", "cop": 1}
+    fake = {"train": [{**row, "exp": "  Because.  "}, {**row, "id": "y", "exp": " "}, {**row, "id": "z", "exp": None}],
+            "validation": []}
+    monkeypatch.setattr(data, "_load_hf", lambda name: fake)
+    assert [e["explanation"] for e in data.load_medmcqa_raw()["train"]] == ["Because.", None, None]
+
+
 def test_load_splits_raises_instead_of_building(tmp_path, monkeypatch):
     monkeypatch.setattr(data, "build_all", lambda *a, **k: pytest.fail("load_splits must not build"))
     with pytest.raises(FileNotFoundError, match="build_all"):
