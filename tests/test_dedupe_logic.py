@@ -1,5 +1,5 @@
-from medsplits import data
-from medsplits.data import dedupe_within, exact_key, global_dedupe, leak_key
+from src.data.medqa_datasets import data
+from src.data.medqa_datasets.data import dedupe_within, exact_key, global_dedupe, leak_key
 
 LONG = "A 45-year-old man presents with chest pain radiating to the left arm and diaphoresis lasting an hour"
 

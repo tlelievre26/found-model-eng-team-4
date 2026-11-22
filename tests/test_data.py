@@ -1,7 +1,7 @@
 import pytest
 
-from medsplits import data
-from medsplits.data import LETTERS, SPLITS, build_all, exact_key, leak_key, load_medqa_raw, load_splits
+from src.data.medqa_datasets import data
+from src.data.medqa_datasets.data import LETTERS, SPLITS, build_all, exact_key, leak_key, load_medqa_raw, load_splits
 
 NAMES = ["medmcqa", "medqa"]
 

@@ -1,4 +1,4 @@
-from medsplits import build_messages, format_question
+from src.data.medqa_datasets import build_messages, format_question
 
 SIX = {
     "id": "x-1", "source": "x", "question": "Which drug?",
