@@ -1,3 +1,5 @@
+import pytest
+
 from src.data.medqa_datasets import data
 from src.data.medqa_datasets.data import dedupe_within, exact_key, global_dedupe, leak_key
 
@@ -64,6 +66,22 @@ def test_dedupe_within_counts_conflicts():
     b = ex("2", LONG, ["w", "x", "y", "z"], "B")                    # exact copy, different answer
     kept, removed, conflicts = dedupe_within([a, b], exact_key)
     assert [e["id"] for e in kept] == ["1"] and removed == 1 and conflicts == 1
+
+
+def test_dedupe_within_drop_conflicts():
+    a = ex("1", LONG, ["w", "x", "y", "z"], "A")
+    b = ex("2", LONG, ["w", "x", "y", "z"], "B")                    # exact copy, different answer: both dropped
+    c = ex("3", LONG, ["w", "x", "y", "z"], "A")
+    d = ex("4", "Another stem entirely about renal physiology and fluid balance in adults", ["a", "b", "c", "d"])
+    e = ex("5", d["question"], ["d", "c", "b", "a"], "D")            # same answer text "a": a normal copy, first kept
+    kept, removed, conflicts = dedupe_within([a, b, c, d, e], exact_key, drop_conflicts=True)
+    assert [r["id"] for r in kept] == ["4"] and removed == 3 and conflicts == 1
+
+
+def test_load_splits_raises_instead_of_building(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "build_all", lambda *a, **k: pytest.fail("load_splits must not build"))
+    with pytest.raises(FileNotFoundError, match="build_all"):
+        data.load_splits("medqa", data_dir=tmp_path)
 
 
 def test_train_must_be_last_in_priority(monkeypatch):

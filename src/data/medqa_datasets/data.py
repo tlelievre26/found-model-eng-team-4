@@ -30,7 +30,7 @@ SIMILARITY_FILTER = {  # subset rows must have no other train question with Leve
     "medmcqa": {"threshold": 0.85, "pool_factor": 2},  # pool_factor: candidates examined = pool_factor * total subset rows
 }
 SHORT_STEM_WORDS = 10  # leak_key: stems with fewer words must also match on options
-DEDUPE_SCHEME = "two-tier-v1"  # exact_key inside train, leak_key against val/test; bump if keys change
+DEDUPE_SCHEME = "two-tier-v2"  # exact_key inside train (conflicting copies dropped), leak_key against val/test; bump if keys change
 HF_REPOS = {"medmcqa": "openlifescienceai/medmcqa", "medqa": "GBaker/MedQA-USMLE-4-options"}
 HF_REVISIONS = {  # pinned dataset commits (None would mean "latest")
     "medmcqa": "91c6572c454088bf71b679ad90aa8dffcd0d5868",
@@ -142,10 +142,13 @@ def load_medqa_raw() -> dict:
     return out
 
 
-def dedupe_within(rows: list, key_fn):
-    """Keep the first row per key_fn(row). Returns (kept, n_removed, n_removed_with_conflicting_answer)."""
+def dedupe_within(rows: list, key_fn, drop_conflicts: bool = False):
+    """Keep the first row per key_fn(row). Returns (kept, n_removed, n_removed_with_conflicting_answer).
+
+    With drop_conflicts=True, a key whose copies disagree on the answer text is dropped entirely (the first copy too)."""
     first, kept = {}, []
     removed = conflicts = 0
+    conflicting = set()
     for r in rows:
         k = key_fn(r)
         if k not in first:
@@ -155,6 +158,9 @@ def dedupe_within(rows: list, key_fn):
         removed += 1
         if _answer_text(first[k]) != _answer_text(r):
             conflicts += 1
+            conflicting.add(k)
+    if drop_conflicts:
+        kept = [r for r in kept if key_fn(r) not in conflicting]
     return kept, removed, conflicts
 
 
@@ -279,8 +285,9 @@ def build_all(out_dir=None, verbose: bool = True, cache_dir=None) -> dict:
 
     removed, conflicts, pools, similarity_info = Counter(), {}, {}, {}
     for name, parts in raw.items():
-        train, n_removed, n_conf = dedupe_within(parts["train"], exact_key)
+        train, n_removed, n_conf = dedupe_within(parts["train"], exact_key, drop_conflicts=True)
         removed[f"{name}/train/within"], conflicts[f"{name}/train"] = n_removed, n_conf
+        removed[f"{name}/train/conflict_dropped"] = len(parts["train"]) - n_removed - len(train)
         test, n_removed, n_conf = dedupe_within(parts["test"], leak_key)
         removed[f"{name}/test/within"], conflicts[f"{name}/test"] = n_removed, n_conf
         flt = SIMILARITY_FILTER.get(name)
@@ -333,8 +340,15 @@ def load_splits(name: str, data_dir=None, check_config: bool = True) -> dict:
     processed_dir = Path(data_dir) / "processed" if data_dir else PROCESSED_DIR
     split_file = splits_dir / f"{name}.json"
     stats_file = splits_dir / "stats.json"
-    if not split_file.exists() or not stats_file.exists():
-        build_all(data_dir)
+    processed_file = processed_dir / f"{name}.jsonl"
+    missing = [str(p) for p in (split_file, stats_file, processed_file) if not p.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Split files not found: {', '.join(missing)}\n"
+            "Build them once, explicitly, from the repo root (writes to $FME_SHARED_DIR/data; for another folder pass "
+            "build_all(out_dir=...)):\n"
+            '  python -c "from src.data.medqa_datasets import build_all; build_all()"'
+        )
 
     if check_config:
         saved = json.loads(stats_file.read_text())["config"]
@@ -347,6 +361,6 @@ def load_splits(name: str, data_dir=None, check_config: bool = True) -> dict:
             )
 
     ids = json.loads(split_file.read_text())
-    with open(processed_dir / f"{name}.jsonl", encoding="utf-8") as f:
+    with open(processed_file, encoding="utf-8") as f:
         by_id = {e["id"]: e for e in map(json.loads, f)}
     return {s: [by_id[i] for i in ids[s]] for s in split_names(name)}

@@ -3,7 +3,7 @@
 One function returns fixed, leak-free splits for MedMCQA and MedQA in a common format, plus the single prompt format used by the model wrapper and training code.
 
 ```python
-from src.data.medqa_datasets import load_splits, build_messages
+from src.data.medqa_datasets import load_splits, build_messages   # build the data once first (see Running it)
 
 medmcqa = load_splits("medmcqa")   # {"train", "hp_dev", "calib", "thresh", "test"}
 medqa = load_splits("medqa")       # {"train", "val", "test"}
@@ -53,13 +53,14 @@ tests/
 ├── test_data.py                      real_data (--run-real-data): leakage, no shared questions, similarity filter,
 │                                     determinism in fresh processes, format, config guard
 ├── test_subsets.py                   Offline: subset carving, similarity filter, guard on subsets
-├── test_dedupe_logic.py              Offline: key functions and the two-tier dedupe on tiny examples
+├── test_dedupe_logic.py              Offline: key functions, the two-tier dedupe and conflict dropping on tiny examples,
+│                                     load_splits refusing to build
 └── test_prompts.py                   Offline: prompt text for 4 and 6 options, message structure
 ```
 
 ### Where the data lives (not part of the submission)
 
-Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). All of these paths come from `src/utils/paths.py` (`DATA_DIR`, `SPLITS_DIR`, `PROCESSED_DIR`, `HF_CACHE_DIR`, `CACHE_DIR`); set the `FME_SHARED_DIR` environment variable to use another root, for example on Insomnia. `build_all(out_dir=...)` and `load_splits(..., data_dir=...)` accept another folder with the same `splits/` and `processed/` layout. They are not committed to git; each person produces them with `build_all()` (or by running the notebook).
+Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). All of these paths come from `src/utils/paths.py` (`DATA_DIR`, `SPLITS_DIR`, `PROCESSED_DIR`, `HF_CACHE_DIR`, `CACHE_DIR`); set the `FME_SHARED_DIR` environment variable to use another root, for example on Insomnia. `build_all(out_dir=...)` and `load_splits(..., data_dir=...)` accept another folder with the same `splits/` and `processed/` layout. The data files are not committed to git; each person produces them with `build_all()` (or by running the notebook).
 
 ```
 <DATA_DIR>/
@@ -74,7 +75,7 @@ Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/
 └── cache/                  Similarity-search results (speed-up only, safe to delete)
 ```
 
-`load_splits` reads the id lists in `splits/` and looks the records up in `processed/`. If these files do not exist yet, it builds them first (about 90 MB download; several minutes because of the similarity search).
+`load_splits` reads the id lists in `splits/` and looks the records up in `processed/`. It never builds them: if they are missing it raises `FileNotFoundError` with the build command (see Running it).
 
 ### What is in `data.py`
 
@@ -85,7 +86,7 @@ Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/
 | `normalize()` | Lowercase, punctuation to spaces, collapse whitespace |
 | `exact_key()`, `leak_key()` | Two definitions of "the same question" (see below) |
 | `load_medmcqa_raw()`, `load_medqa_raw()` | Download (pinned commit) and convert to the common format |
-| `dedupe_within()` | Remove repeats inside one list, keeping the first |
+| `dedupe_within()` | Remove repeats inside one list, keeping the first (optionally dropping every copy of a question whose copies disagree on the answer) |
 | `split_names()` | Split names of a dataset, in the order used everywhere |
 | `near_duplicate_ids()` | Ids of rows with a near-copy (Levenshtein similarity at or above the threshold) in a reference set |
 | `carve_subsets()` | Deterministic, disjoint named subsets from train, optionally skipping near-copy rows |
@@ -101,6 +102,7 @@ Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/
 - **Seed 42.** Rows are sorted by id before shuffling, so the result does not depend on load order.
 - **Deduplication.** Questions are compared after lowercasing, replacing punctuation with spaces and collapsing whitespace. When a question appears in more than one place, one copy is kept with priority test > val > hp_dev > calib > thresh > train (MedQA before MedMCQA on ties).
   - Inside train, and between the two train sets: only true copies are removed (`exact_key`: same question and same options, option order ignored).
+  - Inside each train set, if the true copies of a question disagree on the answer text (label noise), **all** copies are dropped instead of keeping the first. `stats.json` counts the extra rows dropped this way (one per such question; the other copies are already in `within`) as `<dataset>/train/conflict_dropped`. Deduplication of `test` (`leak_key`) still keeps the first copy.
   - Eval splits, and train versus eval splits: strict matching (`leak_key`): stems of 10 or more words match on the question alone, shorter stems must also have the same options. No eval question appears in any train set or in another eval split.
 - **Similarity filter (MedMCQA subsets only).** MedMCQA's authors left questions with Levenshtein similarity above 0.9 to other questions out of its dev/test sets. Random train rows are much more often near-copies of other train rows (21.8% at 0.9 or more, against 0.5% for `test`), so random subsets would be easier than `test` and would bias the fitted temperature and threshold. A candidate row may enter `hp_dev`, `calib` or `thresh` only if no other train question has similarity of 0.85 or more to it (identical text ignored). The comparison uses the whole deduplicated train set before carving, so the subsets are also free of near-copies of each other.
 
@@ -136,9 +138,16 @@ Total removed: 18333 (all MedMCQA). Removed copies whose correct answer text dif
 
 ## Running it
 
-1. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `FME_SHARED_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
-2. Check your copy: run the checksum cell and compare with the reference checksums in the Reproducibility section.
-3. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q`. Plain `pytest` runs only the offline tests: the tests in `tests/test_data.py` are marked `real_data` and skipped by default, because they need the built data and network access and take minutes. To run them too, add `--run-real-data` (about 8 minutes on Colab because two fresh builds recompute the similarity search).
+1. **Build the data once, explicitly**, before anything calls `load_splits` (it does not build on its own). From the repo root:
+
+   ```bash
+   python -c "from src.data.medqa_datasets import build_all; build_all()"
+   ```
+
+   Output goes to `$FME_SHARED_DIR/data` (`/shared/data` by default, on the team VM); on other machines such as Insomnia, set `FME_SHARED_DIR` first. Then check `sha256sum $FME_SHARED_DIR/data/splits/*.json` against the checksums in Reproducibility. The team VM's `/shared/data` can be built this way, or get a copy of `splits/` and `processed/` from a verified build.
+2. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `FME_SHARED_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
+3. Check your copy: run the checksum cell and compare with the reference checksums in the Reproducibility section.
+4. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q`. Plain `pytest` runs only the offline tests: the tests in `tests/test_data.py` are marked `real_data` and skipped by default, because they need the built data (step 1) and network access and take minutes. To run them too, add `--run-real-data` (about 8 minutes on Colab because two fresh builds recompute the similarity search).
 
 ## Reproducibility
 
