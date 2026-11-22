@@ -4,14 +4,16 @@ One function returns fixed, leak-free splits for MedMCQA and MedQA in a common f
 
 ```python
 import os
-os.environ["DATA_DIR"] = "/shared/data"   # set BEFORE importing medsplits
-from medsplits import load_splits, build_messages
+os.environ["DATA_DIR"] = "/shared/data"   # set BEFORE importing src.data.medqa_datasets
+from src.data.medqa_datasets import load_splits, build_messages
 
 medmcqa = load_splits("medmcqa")   # {"train", "hp_dev", "calib", "thresh", "test"}
 medqa = load_splits("medqa")       # {"train", "val", "test"}
 messages = build_messages(medmcqa["train"][0])                       # chat messages for the model
 messages = build_messages(medmcqa["train"][0], include_answer=True)  # adds the gold letter (training)
 ```
+
+**Use the `.py` code** (`load_splits`, `build_messages`) to work with the datasets. The notebook `splits_build_and_analysis.ipynb` only exists for analysis and for running the build on Colab; it imports the same code from the repo and contains no pipeline code of its own.
 
 Example format (any number of options is supported):
 
@@ -39,36 +41,27 @@ Example format (any number of options is supported):
 
 ### What is in the repository
 
-The repository contains only the README and the notebook. **No dataset files are uploaded: everyone builds their own copy** by running the notebook, and the checksums below prove that the copies are identical.
+The code is in this folder and the tests are in the repo's `tests/` folder. **No dataset files are committed: everyone builds their own copy** (see Running it), and the checksums below prove that the copies are identical.
 
 ```
-.
+src/data/medqa_datasets/
 ├── README.md
-└── FME_MedMCQA_MedQA_splits_v6.ipynb   Runs end to end: sets DATA_DIR, writes the package and tests,
-                                        builds the splits, runs the tests, prints the README numbers
+├── __init__.py                       Public names: load_splits, build_all, build_messages, ...
+├── data.py                           Loading, common format, deduplication, subsets, similarity filter, load_splits
+├── prompts.py                        The one prompt format (PROMPT_VERSION, build_messages)
+└── splits_build_and_analysis.ipynb   Colab: clones the repo, builds the splits, runs the tests, analysis cells,
+                                      prints the README numbers
+tests/
+├── test_data.py                      Needs the real data: leakage, no shared questions, similarity filter,
+│                                     determinism in fresh processes, format, config guard
+├── test_subsets.py                   Offline: subset carving, similarity filter, guard on subsets
+├── test_dedupe_logic.py              Offline: key functions and the two-tier dedupe on tiny examples
+└── test_prompts.py                   Offline: prompt text for 4 and 6 options, message structure
 ```
-
-Running the notebook creates the following in Colab's `/content/proj` (temporary, recreated on every run), so it does not need to be stored:
-
-```
-/content/proj/
-├── medsplits/
-│   ├── __init__.py                     Public names: load_splits, build_all, build_messages, ...
-│   ├── data.py                         Loading, common format, deduplication, subsets, similarity filter, load_splits
-│   └── prompts.py                      The one prompt format (PROMPT_VERSION, build_messages)
-└── tests/
-    ├── test_data.py                    Needs the real data: leakage, no shared questions, similarity filter,
-    │                                   determinism in fresh processes, format, config guard
-    ├── test_subsets.py                 Offline: subset carving, similarity filter, guard on subsets
-    ├── test_dedupe_logic.py            Offline: key functions and the two-tier dedupe on tiny examples
-    └── test_prompts.py                 Offline: prompt text for 4 and 6 options, message structure
-```
-
-`__pycache__/` and `.pytest_cache/` folders appear after running; they are generated and not part of the project.
 
 ### Where the data lives (not part of the submission)
 
-Data files are kept outside the code, in the folder named by the `DATA_DIR` environment variable (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). They are not committed to git; each person produces them by running the notebook.
+Data files are kept outside the code, in the folder named by the `DATA_DIR` environment variable (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). They are not committed to git; each person produces them with `build_all()` (or by running the notebook).
 
 ```
 <DATA_DIR>/
@@ -85,7 +78,7 @@ Data files are kept outside the code, in the folder named by the `DATA_DIR` envi
 
 `load_splits` reads the id lists in `splits/` and looks the records up in `processed/`. If these files do not exist yet, it builds them first (about 90 MB download; several minutes because of the similarity search).
 
-### What is in `medsplits/data.py`
+### What is in `data.py`
 
 | Name | Role |
 |---|---|
@@ -145,10 +138,10 @@ Total removed: 18333 (all MedMCQA). Removed copies whose correct answer text dif
 
 ## Running it
 
-1. Open the notebook in Colab and run all cells in order. The setup cell sets `DATA_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it writes the code, downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
+1. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `DATA_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
 2. Check your copy: run the checksum cell and compare with the reference checksums in the Reproducibility section.
-3. Outside Colab: `pip install datasets pytest rapidfuzz==3.14.6`, extract the package and tests from the notebook, set `DATA_DIR`, then from the folder that contains `medsplits/` run `python -m pytest -q tests` (33 tests; about 8 minutes on Colab because two fresh builds recompute the similarity search; the first run also downloads the data).
-4. Set `DATA_DIR` **before** importing `medsplits`; it is read once at import time.
+3. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `DATA_DIR`, then from the repo root run `python -m pytest -q tests` (33 tests; about 8 minutes on Colab because two fresh builds recompute the similarity search; the first run also downloads the data).
+4. Set `DATA_DIR` **before** importing `src.data.medqa_datasets`; it is read once at import time.
 
 ## Reproducibility
 

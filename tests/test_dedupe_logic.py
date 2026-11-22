@@ -2,6 +2,7 @@ from src.data.medqa_datasets import data
 from src.data.medqa_datasets.data import dedupe_within, exact_key, global_dedupe, leak_key
 
 LONG = "A 45-year-old man presents with chest pain radiating to the left arm and diaphoresis lasting an hour"
+ALL = ("train", "val", "hp_dev", "calib", "thresh", "test")
 
 
 def ex(id_, q, opts, ans="A", source="medmcqa"):
@@ -10,7 +11,7 @@ def ex(id_, q, opts, ans="A", source="medmcqa"):
 
 
 def pools(**kw):
-    base = {n: {"train": [], "val": [], "test": []} for n in ("medmcqa", "medqa")}
+    base = {n: {s: [] for s in ALL} for n in ("medmcqa", "medqa")}
     for key, rows in kw.items():
         name, split = key.split("__")
         base[name][split] = rows
