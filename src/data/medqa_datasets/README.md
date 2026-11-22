@@ -3,8 +3,6 @@
 One function returns fixed, leak-free splits for MedMCQA and MedQA in a common format, plus the single prompt format used by the model wrapper and training code.
 
 ```python
-import os
-os.environ["DATA_DIR"] = "/shared/data"   # set BEFORE importing src.data.medqa_datasets
 from src.data.medqa_datasets import load_splits, build_messages
 
 medmcqa = load_splits("medmcqa")   # {"train", "hp_dev", "calib", "thresh", "test"}
@@ -61,7 +59,7 @@ tests/
 
 ### Where the data lives (not part of the submission)
 
-Data files are kept outside the code, in the folder named by the `DATA_DIR` environment variable (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). They are not committed to git; each person produces them with `build_all()` (or by running the notebook).
+Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). All of these paths come from `src/utils/paths.py` (`DATA_DIR`, `SPLITS_DIR`, `PROCESSED_DIR`, `HF_CACHE_DIR`, `CACHE_DIR`); set the `FME_SHARED_DIR` environment variable to use another root, for example on Insomnia. `build_all(out_dir=...)` and `load_splits(..., data_dir=...)` accept another folder with the same `splits/` and `processed/` layout. They are not committed to git; each person produces them with `build_all()` (or by running the notebook).
 
 ```
 <DATA_DIR>/
@@ -138,10 +136,9 @@ Total removed: 18333 (all MedMCQA). Removed copies whose correct answer text dif
 
 ## Running it
 
-1. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `DATA_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
+1. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `FME_SHARED_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
 2. Check your copy: run the checksum cell and compare with the reference checksums in the Reproducibility section.
-3. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `DATA_DIR`, then from the repo root run `python -m pytest -q tests` (33 tests; about 8 minutes on Colab because two fresh builds recompute the similarity search; the first run also downloads the data).
-4. Set `DATA_DIR` **before** importing `src.data.medqa_datasets`; it is read once at import time.
+3. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q tests` (33 tests; about 8 minutes on Colab because two fresh builds recompute the similarity search; the first run also downloads the data).
 
 ## Reproducibility
 

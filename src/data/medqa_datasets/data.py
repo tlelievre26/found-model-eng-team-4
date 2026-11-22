@@ -8,7 +8,6 @@ import hashlib
 import importlib.metadata
 import json
 import math
-import os
 import random
 import re
 import string
@@ -16,11 +15,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from src.utils.paths import CACHE_DIR, DATA_DIR, HF_CACHE_DIR, PROCESSED_DIR, SPLITS_DIR
+
 # -------------------------------------------------------------------------------------------------
 # Shared configuration. Everything here defines the splits. If you change any of it, run build_all()
 # again and re-share the splits folder: load_splits refuses to run on splits built with another config.
 # -------------------------------------------------------------------------------------------------
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/shared/data"))  # set the env var BEFORE importing
 SEED = 42
 SPLIT_SIZES = {  # rows carved out of each dataset's train set, in this order (the rest stays train)
     "medmcqa": {"hp_dev": 2000, "calib": 1500, "thresh": 2500},
@@ -91,7 +91,7 @@ def _load_hf(name: str):
     from datasets import load_dataset
 
     rev = HF_REVISIONS[name]
-    ds = load_dataset(HF_REPOS[name], revision=rev, cache_dir=str(DATA_DIR / "hf_cache"))
+    ds = load_dataset(HF_REPOS[name], revision=rev, cache_dir=str(HF_CACHE_DIR))
     try:
         from huggingface_hub import HfApi
 
@@ -268,10 +268,11 @@ def _environment() -> dict:
 
 def build_all(out_dir=None, verbose: bool = True, cache_dir=None) -> dict:
     """Build every split from scratch and write ids, records and stats to out_dir."""
-    out_dir = Path(out_dir or DATA_DIR)
-    cache_dir = Path(cache_dir or DATA_DIR / "cache")
-    (out_dir / "splits").mkdir(parents=True, exist_ok=True)
-    (out_dir / "processed").mkdir(parents=True, exist_ok=True)
+    splits_dir = Path(out_dir) / "splits" if out_dir else SPLITS_DIR
+    processed_dir = Path(out_dir) / "processed" if out_dir else PROCESSED_DIR
+    cache_dir = Path(cache_dir or CACHE_DIR)
+    splits_dir.mkdir(parents=True, exist_ok=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
 
     raw = {"medmcqa": load_medmcqa_raw(), "medqa": load_medqa_raw()}
     raw_sizes = {n: {s: len(v) for s, v in parts.items()} for n, parts in raw.items()}
@@ -313,12 +314,12 @@ def build_all(out_dir=None, verbose: bool = True, cache_dir=None) -> dict:
     for name, parts in final.items():
         names = split_names(name)
         ids = {s: [e["id"] for e in parts[s]] for s in names}
-        (out_dir / "splits" / f"{name}.json").write_text(json.dumps(ids))
-        with open(out_dir / "processed" / f"{name}.jsonl", "w", encoding="utf-8") as f:
+        (splits_dir / f"{name}.json").write_text(json.dumps(ids))
+        with open(processed_dir / f"{name}.jsonl", "w", encoding="utf-8") as f:
             for s in names:
                 for e in parts[s]:
                     f.write(json.dumps(e, ensure_ascii=False) + "\n")
-    (out_dir / "splits" / "stats.json").write_text(json.dumps(stats, indent=2))
+    (splits_dir / "stats.json").write_text(json.dumps(stats, indent=2))
     if verbose:
         print(json.dumps(stats, indent=2))
     return stats
@@ -328,9 +329,10 @@ def load_splits(name: str, data_dir=None, check_config: bool = True) -> dict:
     """Return {split name: [examples]} for "medmcqa" or "medqa" (see split_names)."""
     if name not in HF_REPOS:
         raise ValueError(f"unknown dataset {name!r}; expected one of {sorted(HF_REPOS)}")
-    data_dir = Path(data_dir or DATA_DIR)
-    split_file = data_dir / "splits" / f"{name}.json"
-    stats_file = data_dir / "splits" / "stats.json"
+    splits_dir = Path(data_dir) / "splits" if data_dir else SPLITS_DIR
+    processed_dir = Path(data_dir) / "processed" if data_dir else PROCESSED_DIR
+    split_file = splits_dir / f"{name}.json"
+    stats_file = splits_dir / "stats.json"
     if not split_file.exists() or not stats_file.exists():
         build_all(data_dir)
 
@@ -345,6 +347,6 @@ def load_splits(name: str, data_dir=None, check_config: bool = True) -> dict:
             )
 
     ids = json.loads(split_file.read_text())
-    with open(data_dir / "processed" / f"{name}.jsonl", encoding="utf-8") as f:
+    with open(processed_dir / f"{name}.jsonl", encoding="utf-8") as f:
         by_id = {e["id"]: e for e in map(json.loads, f)}
     return {s: [by_id[i] for i in ids[s]] for s in split_names(name)}

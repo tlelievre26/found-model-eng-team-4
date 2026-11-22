@@ -109,7 +109,7 @@ def test_medqa_test_is_untouched(splits):
 
 def _build_in_fresh_process(out_dir, hash_seed):
     """Build in a new Python process with its own EMPTY similarity cache, so the search is really recomputed."""
-    env = {**os.environ, "PYTHONHASHSEED": str(hash_seed), "DATA_DIR": str(data.DATA_DIR)}
+    env = {**os.environ, "PYTHONHASHSEED": str(hash_seed), "FME_SHARED_DIR": str(data.DATA_DIR.parent)}
     code = "import sys; from src.data.medqa_datasets.data import build_all; build_all(sys.argv[1], verbose=False, cache_dir=sys.argv[2])"
     subprocess.run([sys.executable, "-c", code, str(out_dir), str(out_dir / "cache")], check=True, env=env, cwd=ROOT)
 

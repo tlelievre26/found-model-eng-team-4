@@ -21,6 +21,11 @@ SHARED_DIR = Path(os.environ.get("FME_SHARED_DIR", DEFAULT_SHARED_DIR)).expandus
 MODELS_DIR = SHARED_DIR / "models"
 # Raw downloads + processed splits.
 DATA_DIR = SHARED_DIR / "data"
+# Subfolders of DATA_DIR written by src/data/medqa_datasets.
+SPLITS_DIR = DATA_DIR / "splits"  # question ids per split + stats.json
+PROCESSED_DIR = DATA_DIR / "processed"  # records in the common format (jsonl)
+HF_CACHE_DIR = DATA_DIR / "hf_cache"  # raw Hugging Face dataset downloads
+CACHE_DIR = DATA_DIR / "cache"  # similarity-search results (speed-up only)
 # Training run outputs.
 CHECKPOINTS_DIR = SHARED_DIR / "checkpoints"
 
