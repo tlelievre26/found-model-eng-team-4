@@ -143,6 +143,7 @@ class _Interval:
             "p_correct": self.p_correct / self.n,
             "letter_mass": self.letter_mass / self.n,
             "pad_frac": self.pad_frac / self.micro_batches,
+            "forwards_per_step": self.micro_batches / self.steps,
             **{f"pred_frac_{k}": v / total for k, v in sorted(self.preds.items())},
         }
 
@@ -317,8 +318,10 @@ def train(cfg: dict, *, model=None, tokenizer=None, train_examples=None, eval_ex
                 n_examples = sum(len(mb) for mb in step["micro_batches"])
                 lr = scheduler.get_last_lr()[0]
                 step_loss = 0.0
-                for mb in step["micro_batches"]:
-                    batch = td.collate([items[i] for i in mb], pad_id)
+                forward_rows = [rows for mb in step["micro_batches"]
+                                for rows in td.split_by_tokens(mb, lengths, cfg["max_tokens_per_forward"])]
+                for rows in forward_rows:
+                    batch = td.collate([items[i] for i in rows], pad_id)
                     batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
                     logits, targets = answer_logits(model, batch)
                     loss = F.cross_entropy(logits.float(), targets, reduction="sum") / n_examples

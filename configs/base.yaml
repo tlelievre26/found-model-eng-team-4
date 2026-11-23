@@ -22,6 +22,9 @@ max_seq_len: 512               # nothing is truncated: a longer example is an er
 micro_batch_size: 16
 grad_accum_steps: 2            # effective batch 32
 group_chunk_batches: 64        # length grouping: sort chunks of this many micro-batches by length
+max_tokens_per_forward: 1536   # memory guard: a micro-batch whose padded size (rows x longest) exceeds this runs
+                               # as several forward/backward passes (same gradient). 16 x 96 tokens is ~16 GB at
+                               # rank 32 without gradient checkpointing; null = never split
 
 # --- QLoRA (4-bit NF4 base, double quantization, bf16 compute; see src/models/qwen.py:load_base_model)
 lora_rank: 16

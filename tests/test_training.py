@@ -105,6 +105,35 @@ def test_only_the_answer_letter_is_supervised():
     assert (batch["attention_mask"].sum(1) == torch.tensor([len(x["input_ids"]) for x in items])).all()
 
 
+def test_split_by_tokens_bounds_padded_size_and_keeps_rows():
+    lengths = [10, 20, 30, 40, 50, 60, 70, 200]
+    batch = list(range(8))
+    chunks = td.split_by_tokens(batch, lengths, 100)
+    assert [i for c in chunks for i in c] == batch
+    assert all(len(c) == 1 or len(c) * max(lengths[i] for i in c) <= 100 for c in chunks)
+    assert chunks[-1] == [7]  # longer than the cap on its own
+    assert td.split_by_tokens(batch, lengths, None) == [batch]
+
+
+def test_split_forward_passes_give_the_same_gradient():
+    from src.training.train import answer_logits
+    model, tok = tiny_model(), CharTokenizer()
+    items = td.tokenize_examples(make_examples(6), tok, 512)
+    lengths = [len(x["input_ids"]) for x in items]
+    rows = sorted(range(6), key=lambda i: lengths[i])
+
+    def grads(max_tokens):
+        model.zero_grad()
+        for chunk in td.split_by_tokens(rows, lengths, max_tokens):
+            logits, targets = answer_logits(model, td.collate([items[i] for i in chunk], 0))
+            (torch.nn.functional.cross_entropy(logits.float(), targets, reduction="sum") / 6).backward()
+        return [p.grad.clone() for p in model.parameters() if p.grad is not None]
+
+    whole, split = grads(None), grads(2 * max(lengths))
+    assert len(td.split_by_tokens(rows, lengths, 2 * max(lengths))) > 1
+    assert all(torch.allclose(a, b, atol=1e-6) for a, b in zip(whole, split))
+
+
 def test_too_long_examples_fail_instead_of_truncating():
     with pytest.raises(ValueError, match="longer than max_seq_len"):
         td.tokenize_examples(make_examples(3), CharTokenizer(), max_seq_len=20)

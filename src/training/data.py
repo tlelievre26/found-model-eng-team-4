@@ -129,6 +129,25 @@ def build_plan(lengths: list[int], cfg: dict) -> list[dict]:
     return steps
 
 
+def split_by_tokens(batch: list[int], lengths: list[int], max_tokens: int | None) -> list[list[int]]:
+    """Consecutive row chunks of a micro-batch whose padded size (rows x longest row) stays within max_tokens.
+
+    Bounds activation memory: a wide micro-batch is run as several forward/backward passes. The gradient is
+    unchanged, because the loss is summed per example and divided by the step's example count. A single row
+    longer than max_tokens is its own chunk.
+    """
+    if not max_tokens:
+        return [batch]
+    chunks, current, width = [], [], 0
+    for i in batch:
+        if current and (len(current) + 1) * max(width, lengths[i]) > max_tokens:
+            chunks.append(current)
+            current, width = [], 0
+        current.append(i)
+        width = max(width, lengths[i])
+    return chunks + [current] if current else chunks
+
+
 def plan_fingerprint(plan: list[dict]) -> str:
     """SHA-256 of the data plan, stored with resume state to make sure a resumed run sees the same data."""
     return hashlib.sha256(json.dumps(plan, separators=(",", ":")).encode()).hexdigest()
