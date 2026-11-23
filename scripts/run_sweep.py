@@ -12,10 +12,13 @@ import argparse
 import gc
 import itertools
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Less allocator fragmentation: variable-width batches otherwise leave GBs reserved but unused (matters on the L4).
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch  # noqa: E402
 import yaml  # noqa: E402

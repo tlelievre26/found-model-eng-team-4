@@ -8,10 +8,13 @@ latest resume state; a completed run (DONE marker) is not trained again. See doc
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Less allocator fragmentation: variable-width batches otherwise leave GBs reserved but unused (matters on the L4).
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 from src.training.config import load_config  # noqa: E402
 from src.training.train import RunAlreadyComplete, train  # noqa: E402
