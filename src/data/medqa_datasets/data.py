@@ -15,7 +15,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from src.utils.paths import CACHE_DIR, DATA_DIR, HF_CACHE_DIR, PROCESSED_DIR, SPLITS_DIR
+from src.data.medabstain import FILES as MEDABSTAIN_FILES, UPSTREAM_COMMIT as MEDABSTAIN_COMMIT
+from src.data.medabstain import check_checksums, load_medabstain
+from src.utils.paths import CACHE_DIR, DATA_DIR, HF_CACHE_DIR, MEDABSTAIN_DIR, PROCESSED_DIR, SPLITS_DIR
 
 # -------------------------------------------------------------------------------------------------
 # Shared configuration. Everything here defines the splits. If you change any of it, run build_all()
@@ -30,14 +32,16 @@ SIMILARITY_FILTER = {  # subset rows must have no other train question with Leve
     "medmcqa": {"threshold": 0.85, "pool_factor": 2},  # pool_factor: candidates examined = pool_factor * total subset rows
 }
 SHORT_STEM_WORDS = 10  # leak_key: stems with fewer words must also match on options
-DEDUPE_SCHEME = "two-tier-v2"  # exact_key inside train (conflicting copies dropped), leak_key against val/test; bump if keys change
+DEDUPE_SCHEME = "two-tier-v3"  # exact_key inside train (conflicting copies dropped), leak_key against val/test,
+#                               MedAbstain test questions excluded before carving; bump if keys change
 HF_REPOS = {"medmcqa": "openlifescienceai/medmcqa", "medqa": "GBaker/MedQA-USMLE-4-options"}
 HF_REVISIONS = {  # pinned dataset commits (None would mean "latest")
     "medmcqa": "91c6572c454088bf71b679ad90aa8dffcd0d5868",
     "medqa": "0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18",
 }
 SPLIT_PRIORITY = ("test", "val", "hp_dev", "calib", "thresh", "train")  # a repeated question stays in the earliest; train last
-DATASET_ORDER = ("medqa", "medmcqa")  # tie-break inside a split: MedQA first (protects MedAbstain)
+DATASET_ORDER = ("medqa", "medmcqa")  # tie-break inside a split: MedQA first (keeps the official MedQA test set whole)
+MEDABSTAIN_PROTECTED = ("test", "NA")  # (split, variant) whose original questions are excluded from every split
 LETTERS = string.ascii_uppercase  # option labels by position, so any option count up to 26 works
 
 RESOLVED_REVISIONS = {}  # filled by _load_hf: the dataset commits actually used
@@ -56,6 +60,8 @@ def current_config() -> dict:
         "hf_revisions": HF_REVISIONS,
         "split_priority": list(SPLIT_PRIORITY),
         "dataset_order": list(DATASET_ORDER),
+        "medabstain_upstream_commit": MEDABSTAIN_COMMIT,
+        "medabstain_protected_file": MEDABSTAIN_FILES[MEDABSTAIN_PROTECTED[0]][MEDABSTAIN_PROTECTED[1]],
     }
 
 
@@ -166,6 +172,32 @@ def dedupe_within(rows: list, key_fn, drop_conflicts: bool = False):
     return kept, removed, conflicts
 
 
+def exclude_protected(rows: list, protected: set):
+    """Drop rows whose normalized question is in protected (options are ignored). Returns (kept, removed_ids)."""
+    kept, removed = [], []
+    for r in rows:
+        if normalize(r["question"]) in protected:
+            removed.append(r["id"])
+        else:
+            kept.append(r)
+    return kept, removed
+
+
+def medabstain_protected_questions(medabstain_dir=None) -> set:
+    """Normalized MedAbstain test questions, after checking the files against provenance.json. Fails if unverified."""
+    directory = Path(medabstain_dir) if medabstain_dir else MEDABSTAIN_DIR
+    try:
+        check_checksums(directory)
+    except (OSError, KeyError, ValueError) as exc:
+        raise RuntimeError(
+            f"The splits must exclude MedAbstain test questions, but the MedAbstain files in {directory} are missing "
+            f"or do not match provenance.json ({exc}).\nDownload them first: python -m scripts.download_medabstain "
+            "(or build everything with python -m scripts.build_all_datasets)."
+        ) from exc
+    split, variant = MEDABSTAIN_PROTECTED
+    return {normalize(r["question"]) for r in load_medabstain(variant, split, directory)}
+
+
 def split_names(name: str) -> tuple:
     """Split names of one dataset: train, the carved subsets (SPLIT_SIZES order), test."""
     return ("train", *SPLIT_SIZES[name], "test")
@@ -274,8 +306,12 @@ def _environment() -> dict:
     return {"python": sys.version.split()[0], "datasets": version("datasets"), "rapidfuzz": version("rapidfuzz")}
 
 
-def build_all(out_dir=None, verbose: bool = True, cache_dir=None) -> dict:
-    """Build every split from scratch and write ids, records and stats to out_dir."""
+def build_all(out_dir=None, verbose: bool = True, cache_dir=None, medabstain_dir=None) -> dict:
+    """Build every split from scratch and write ids, records and stats to out_dir.
+
+    Needs the verified MedAbstain files (medabstain_dir, default paths.MEDABSTAIN_DIR): their test questions are
+    removed from every dataset before carving, and the build fails without them."""
+    protected = medabstain_protected_questions(medabstain_dir)
     splits_dir = Path(out_dir) / "splits" if out_dir else SPLITS_DIR
     processed_dir = Path(out_dir) / "processed" if out_dir else PROCESSED_DIR
     cache_dir = Path(cache_dir or CACHE_DIR)
@@ -285,13 +321,18 @@ def build_all(out_dir=None, verbose: bool = True, cache_dir=None) -> dict:
     raw = {"medmcqa": load_medmcqa_raw(), "medqa": load_medqa_raw()}
     raw_sizes = {n: {s: len(v) for s, v in parts.items()} for n, parts in raw.items()}
 
-    removed, conflicts, pools, similarity_info = Counter(), {}, {}, {}
+    removed, conflicts, pools, similarity_info, medabstain_ids = Counter(), {}, {}, {}, {}
     for name, parts in raw.items():
         train, n_removed, n_conf = dedupe_within(parts["train"], exact_key, drop_conflicts=True)
         removed[f"{name}/train/within"], conflicts[f"{name}/train"] = n_removed, n_conf
         removed[f"{name}/train/conflict_dropped"] = len(parts["train"]) - n_removed - len(train)
         test, n_removed, n_conf = dedupe_within(parts["test"], leak_key)
         removed[f"{name}/test/within"], conflicts[f"{name}/test"] = n_removed, n_conf
+        # MedAbstain first: its test questions leave both pools before anything is carved or kept over them.
+        train, medabstain_ids[f"{name}/train"] = exclude_protected(train, protected)
+        test, medabstain_ids[f"{name}/test"] = exclude_protected(test, protected)
+        removed[f"{name}/train/medabstain"] = len(medabstain_ids[f"{name}/train"])
+        removed[f"{name}/test/medabstain"] = len(medabstain_ids[f"{name}/test"])
         flt = SIMILARITY_FILTER.get(name)
         if flt:
             info = similarity_info[name] = {"threshold": flt["threshold"]}
@@ -317,6 +358,7 @@ def build_all(out_dir=None, verbose: bool = True, cache_dir=None) -> dict:
         "removed": dict(removed),
         "similarity_filter": similarity_info,
         "duplicate_answer_conflicts": conflicts,
+        "medabstain_excluded_ids": medabstain_ids,  # ids of our rows only, never MedAbstain text
         "sizes": {n: {s: len(final[n][s]) for s in split_names(n)} for n in final},
     }
 
@@ -347,9 +389,9 @@ def load_splits(name: str, data_dir=None, check_config: bool = True) -> dict:
     if missing:
         raise FileNotFoundError(
             f"Split files not found: {', '.join(missing)}\n"
-            "Build them once, explicitly, from the repo root (writes to $FME_SHARED_DIR/data; for another folder pass "
-            "build_all(out_dir=...)):\n"
-            '  python -c "from src.data.medqa_datasets import build_all; build_all()"'
+            "Copy a verified build (python -m scripts.build_all_datasets --verify-only), or build once, explicitly, "
+            "from the repo root (writes to $FME_SHARED_DIR/data; see the README before building):\n"
+            "  python -m scripts.build_all_datasets"
         )
 
     if check_config:

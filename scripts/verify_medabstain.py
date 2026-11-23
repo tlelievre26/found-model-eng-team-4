@@ -3,28 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
 from src.data.medabstain import (
-    FILES, UPSTREAM_COMMIT, check_medqa_overlap, load_medabstain,
+    FILES, check_checksums, check_medqa_overlap, load_medabstain,
 )
 from src.data.medqa_datasets import load_splits
-from src.utils import paths
-
-
-def check_checksums(data_dir=None) -> dict:
-    """Compare every file listed in provenance.json with its recorded SHA-256."""
-    directory = Path(data_dir).expanduser() if data_dir is not None else paths.MEDABSTAIN_DIR
-    manifest = json.loads((directory / "provenance.json").read_text())
-    if manifest["commit"] != UPSTREAM_COMMIT:
-        raise ValueError(f"Data is from upstream commit {manifest['commit']}, expected {UPSTREAM_COMMIT}")
-    bad = [name for name, digest in manifest["sha256"].items()
-           if hashlib.sha256((directory / name).read_bytes()).hexdigest() != digest]
-    if bad:
-        raise ValueError(f"Checksum mismatch in {directory}: {bad}")
-    return {"files": len(manifest["sha256"]), "commit": manifest["commit"]}
 
 
 def verify(data_dir=None, medqa_splits=None):

@@ -99,3 +99,43 @@ def test_train_must_be_last_in_priority(monkeypatch):
     except AssertionError:
         return
     raise AssertionError("expected the priority assertion to fire")
+
+
+def test_medabstain_questions_excluded_before_carving(tmp_path, monkeypatch):
+    """Offline build on made-up rows: a MedAbstain test question leaves train before carving, and test; options ignored."""
+    import hashlib
+    import json
+
+    from src.data.medabstain import FILES, UPSTREAM_COMMIT
+
+    abst = tmp_path / "medabstain"
+    abst.mkdir()
+    protected = "Which made-up drug is protected by the MedAbstain exclusion in this tiny offline build?"
+    (abst / FILES["test"]["NA"]).write_text(json.dumps([{"id": 1, "source": "x", "question": protected,
+                                                         "choices": dict(zip("ABCDE", "vwxyz")), "answer": "A"}]))
+    for name in {f for files in FILES.values() for f in files.values()} - {FILES["test"]["NA"]}:
+        (abst / name).write_text("[]")
+    with pytest.raises(RuntimeError, match="MedAbstain"):     # no provenance.json: the build refuses to run
+        data.build_all(tmp_path / "out", verbose=False, medabstain_dir=abst)
+    sha = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in abst.iterdir()}
+    (abst / "provenance.json").write_text(json.dumps({"commit": UPSTREAM_COMMIT, "sha256": sha}))
+
+    def rows(split, n, source):
+        return [ex(f"{source}-{split}-{i}", f"{LONG} in {source} {split} case {i}", ["a", "b", "c", "d"], source=source)
+                for i in range(n)]
+    medqa = {"train": rows("train", 20, "medqa"), "test": rows("test", 5, "medqa")}
+    medqa["train"].append(ex("medqa-train-hit", protected.upper(), ["p", "q", "r", "s"], source="medqa"))  # 4 other options
+    medqa["test"].append(ex("medqa-test-hit", protected, ["p", "q", "r", "s"], source="medqa"))
+    monkeypatch.setattr(data, "load_medqa_raw", lambda: medqa)
+    monkeypatch.setattr(data, "load_medmcqa_raw", lambda: {"train": rows("train", 30, "medmcqa"), "test": []})
+    monkeypatch.setattr(data, "SPLIT_SIZES", {"medmcqa": {"hp_dev": 2, "calib": 2, "thresh": 2}, "medqa": {"val": 10}})
+    monkeypatch.setattr(data, "SIMILARITY_FILTER", {})
+    carved_from = []
+    carve = data.carve_subsets
+    monkeypatch.setattr(data, "carve_subsets", lambda rows, *a, **k: carved_from.extend(e["id"] for e in rows) or carve(rows, *a, **k))
+
+    stats = data.build_all(tmp_path / "out", verbose=False, cache_dir=tmp_path / "cache", medabstain_dir=abst)
+    assert stats["medabstain_excluded_ids"]["medqa/train"] == ["medqa-train-hit"]
+    assert stats["medabstain_excluded_ids"]["medqa/test"] == ["medqa-test-hit"]
+    assert "medqa-train-hit" not in carved_from and len(carved_from) == 50
+    assert stats["sizes"]["medqa"] == {"train": 10, "val": 10, "test": 5}
