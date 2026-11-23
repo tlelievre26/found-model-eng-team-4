@@ -45,11 +45,10 @@ the group).
 | Optimizer | paged 8-bit AdamW (bitsandbytes), weight decay 0 | Small optimizer state; paging avoids out-of-memory spikes |
 | Gradient clipping | 1.0 (global norm) | |
 | Learning rate schedule | linear warmup for `warmup_steps: 100`, then **constant** | Warmup in *steps*, not a ratio: with a ratio the 1,236-step trials and the ~30,000-step main run would warm up for very different lengths, and the best learning rate might not carry over. A constant rate after warmup means a checkpoint midway through the main run is trained the same way as a trial |
-| Batch | 16 per micro-batch × 2 accumulation steps = **32 questions per optimizer step** | |
+| Batch | 4 per micro-batch × 8 accumulation steps = **32 questions per optimizer step** | Chosen for simplicity and a guaranteed memory fit over throughput: even the worst possible micro-batch (4 × 512 tokens) fits in the L4's 24 GB without gradient checkpointing (measured below). Batch 16 × 2 ran about twice as fast, but its long-tail batches needed more than 47 GiB |
 | Max length | 512 tokens | The longest MedMCQA train example is 472 tokens with the chat template. Nothing is truncated: a longer example stops training with an error |
 | Loss | cross-entropy on the **answer-letter token only** | Every other label is -100. The supervised token is the same one the wrapper (`src/models/qwen.py`) reads at evaluation |
-| Gradient checkpointing | off (`gradient_checkpointing: true` to turn on) | It caps memory at 3.5–6.5 GB at any length, but each step takes 1.4–1.7× as long (measured, see below). The memory guard below bounds memory instead |
-| Memory guard | `max_tokens_per_forward: 1536` | Without checkpointing, activations cost about 9 MB per padded token at rank 32, and length grouping pads a micro-batch to its longest row (up to 472). A micro-batch whose padded size (rows × longest row) exceeds 1,536 tokens is run as consecutive row chunks, each a separate forward/backward pass. The loss is summed per question over the optimizer step, so the gradient is unchanged (a CPU test checks this). `train/forwards_per_step` shows how often it happens |
+| Gradient checkpointing | off (`gradient_checkpointing: true` to turn on) | The alternative if memory is ever short: at 4 × 512 tokens it peaks at 3.8 GiB instead of 20.4 GiB, but each step takes 1.5× as long (measured below) |
 | Seed | 42 | Sets the data order, the LoRA initialization and dropout |
 
 The letter-only loss: the training text is the chat template of `build_messages(ex, include_answer=True)`,
@@ -72,9 +71,9 @@ the 151,936-entry vocabulary from being materialized for every position.
   `fraction × (tokens in one full epoch)`**. For the sweep, `epochs: 0.25` is the first 39,523 questions of
   epoch 0's order, 2,965,496 tokens. All of this is decided up front, before training starts.
 - **Length grouping:** the selected examples, in shuffled order, are cut into chunks of 64 micro-batches
-  (1,024 questions). Each chunk is sorted by length and cut into micro-batches of 16, and then the order of all
+  (256 questions). Each chunk is sorted by length and cut into micro-batches of 4, and then the order of all
   micro-batches in the epoch is shuffled deterministically. Padding is per batch (dynamic), and the average
-  padding is 1.3% of tokens. An optimizer step never crosses an epoch boundary, so the last step of an epoch may
+  padding is 0.9% of tokens. An optimizer step never crosses an epoch boundary, so the last step of an epoch may
   have fewer than 32 questions.
 - **Compute measure:** `tokens_seen` is the cumulative number of non-padding input tokens (the sum of
   `attention_mask`, the prompt included). It is the definition in `src/utils/wandb_logging.py`, used for
@@ -142,49 +141,43 @@ price would misstate it. Dollar figures are not used to compare runs (see below)
 The sweep and the smoke runs run on Insomnia's RTX A6000s (48 GB), not the project's target L4 (24 GB). The run
 name, the W&B tags and the run config (`gpu_tag`, `provenance`, `gpu_name`) all record the GPU type.
 
-**Measured memory and throughput** (RTX A6000, torch 2.14.1+cu126, the real config: batch 16 × 2, length
-grouping, `max_tokens_per_forward: 1536`, no gradient checkpointing). Each run trained on 0.05 epoch of the full
-MedMCQA train set (593,121 tokens, 248 steps), so the batch shapes match a real run. Memory is in GiB, as PyTorch
-reports it. W&B has these as `perf/gpu_mem_peak_gb` and `perf/gpu_mem_reserved_gb`, plus `train_tokens_per_sec`
-in the run summary.
+**Measured memory and throughput** (RTX A6000, torch 2.14.1+cu126, the real config: batch 4 × 8, length
+grouping, no gradient checkpointing, `expandable_segments`). Each throughput run trained on 0.05 epoch of the full
+MedMCQA train set (593,121 tokens, 248 optimizer steps), so the batch shapes match a real run. Memory is in GiB, as
+PyTorch reports it. W&B has these as `perf/gpu_mem_peak_gb` and `perf/gpu_mem_reserved_gb`, plus
+`train_tokens_per_sec` in the run summary.
 
-| LoRA rank | Peak allocated | Peak reserved | Training throughput | W&B run |
-|---|---|---|---|---|
-| 8 | 16.6 GiB | 20.7 GiB (before expandable segments) | 1,895 tokens/s | `tput-r8-A6000` |
-| 32 | 17.1 GiB | 21.8 GiB (before expandable segments) | 1,882 tokens/s | `tput-r32-A6000` |
-| 32, expandable segments | 16.9 GiB | **17.7 GiB** | 1,885 tokens/s | `tput-r32-expseg-A6000` |
+| LoRA rank | Training throughput | Step time (32 questions) | Peak allocated | Peak reserved | W&B run |
+|---|---|---|---|---|---|
+| 8 | 1,027 tokens/s | 2.33 s | 13.0 GiB | 13.4 GiB | `tput-b4-r8-A6000` |
+| 32 | 952 tokens/s | 2.51 s | 13.4 GiB | 13.9 GiB | `tput-b4-r32-A6000` |
 
-- The rank hardly matters: the frozen 4-bit base dominates both memory and time.
-- The scripts set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, unless it is already set. With
-  variable-width batches the default allocator held about 4 GiB more than it used. With expandable segments,
-  peak reserved memory at rank 32 is 17.7 GiB. That leaves about 4 GiB of headroom on the L4 (about 22 GiB
-  usable), which still has to be confirmed there.
-- The smoke runs (1,024 questions) gave 16.7 GiB / 1,845 tokens/s at rank 16 and 16.9 GiB / 1,448 tokens/s at
-  rank 32. The second is probably a slow node: the longer rank-32 run above is the representative one.
+**Worst case** (one micro-batch of 4 at the full 512 tokens, rank 32, train mode, forward + backward + optimizer
+step): **20.4 GiB allocated, 20.9 GiB reserved**, 0.88 s. The L4 has about 22 GiB usable, so even this fits, with
+about 1 GiB to spare. The longest real example is 472 tokens, so real batches stay below this. Smaller widths:
+4 × 64 is 5.0 GiB, 4 × 128 is 7.2 GiB, 4 × 256 is 11.6 GiB and 4 × 384 is 16.0 GiB. With gradient checkpointing,
+4 × 512 is 3.8 GiB at 1.33 s.
+
+- Batch 4 × 8 was chosen for simplicity and a guaranteed fit, not for speed. The earlier batch 16 × 2 ran at
+  about 1,890 tokens/s (1.27 s per step), but its long-tail micro-batches (16 × 384 or wider) needed more than
+  47 GiB. It would have required splitting wide batches or turning gradient checkpointing on.
+- The rank matters little: the frozen 4-bit base dominates both memory and time.
+- The scripts set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, unless it is already set, so reserved memory
+  stays close to allocated with variable-width batches.
+- The smoke config (1,024 questions, 48 steps) at rank 16 ran at 1,050 tokens/s with a 14.4 GiB peak
+  (`smoke-b4-A6000`).
 - A full hp_dev evaluation (2,000 questions, wrapper batch 16) takes 34 s and peaks at 5.1 GiB. Loading the 4-bit
   model takes about 15 s, and tokenizing the training set about 25 s.
+- Peak memory on the L4 itself still has to be confirmed there.
 
-**Why the memory guard and not gradient checkpointing.** Each row below is one micro-batch of 16 at rank 32, in
-train mode, with a full forward, backward and optimizer step:
+**Projected sweep time (A6000):** a trial is 2,965,496 tokens. At 950–1,030 tokens/s that is 48–52 minutes of
+training. Add two hp_dev evaluations (about 1 minute) and startup (about 1 minute), for about 50–54 minutes per
+trial. The 9 trials and the baseline evaluation take **about 7.5–8 hours** in one job, within `sweep.sbatch`'s
+2-day limit.
 
-| Padded width | No checkpointing: peak / step time | Gradient checkpointing: peak / step time |
-|---|---|---|
-| 64 | 11.7 GiB / 0.52 s | 3.5 GiB / 0.88 s |
-| 128 | 20.5 GiB / 0.90 s | 3.8 GiB / 1.26 s |
-| 256 | 38.0 GiB / 1.66 s | 4.8 GiB / 2.36 s |
-| 384, 472 | out of memory (over 47 GiB) | 5.9 / 6.5 GiB, 3.4 / 4.2 s |
-
-The median micro-batch is 69 tokens wide, but 1% are 251 or wider, and the longest is 472. Without a guard the
-main run would run out of memory on its widest micro-batches even on the A6000. Checkpointing would fix this at
-1.4–1.7× the step time on every batch. The guard (`max_tokens_per_forward`) splits only the wide ones, and costs
-2.26 forward passes per step on average instead of 2. To use checkpointing instead, set
-`gradient_checkpointing=true max_tokens_per_forward=null`.
-
-**Projected sweep time (A6000):** a trial is 2,965,496 tokens. At about 1,890 tokens/s that is 26 minutes of
-training. Add two hp_dev evaluations (about 1 minute) and startup (model load and tokenization, about 1 minute),
-for about 28–29 minutes per trial. The 9 trials and the baseline evaluation take **about 4.3–4.5 hours** in one
-job, well within `sweep.sbatch`'s 2-day limit. For comparison, the main run (6 epochs, 71.2M tokens) would be
-about 10.5 hours of training on an A6000.
+**Projected main run (A6000):** 6 epochs are 71.2M tokens, so **about 19–21 hours** of training at 950–1,030
+tokens/s, plus about 4 minutes for six hp_dev evaluations. That is within `train.sbatch`'s 3-day limit, and a
+resubmit resumes it if needed.
 
 ## L4-equivalent cost
 

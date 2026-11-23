@@ -60,7 +60,7 @@ Logged by `wandb_logging.log_train` with every training log point.
 |---|---|---|
 | `tokens_per_sec` | Non-padding tokens processed per second since the previous log point | Includes any evaluation or checkpoint saving in that interval, so it dips at eval points. For the pure training throughput use `train_tokens_per_sec` in the run summary |
 | `gpu_mem_peak_gb` | Peak GPU memory allocated by PyTorch since the run (session) started | **The number to check against the L4's 24 GB** (it does not include the CUDA context, about 0.5 GB) |
-| `gpu_mem_allocated_gb` / `gpu_mem_reserved_gb` | Memory currently allocated / held by PyTorch's caching allocator | Reserved is closer to what `nvidia-smi` shows, and is what actually has to fit. The scripts set `expandable_segments` to keep it close to allocated (17.7 GiB at rank 32 on the A6000) |
+| `gpu_mem_allocated_gb` / `gpu_mem_reserved_gb` | Memory currently allocated / held by PyTorch's caching allocator | Reserved is closer to what `nvidia-smi` shows, and is what actually has to fit. The scripts set `expandable_segments` to keep it close to allocated (13.9 GiB at rank 32 on the A6000; at most 20.9 GiB for a 4 × 512 micro-batch) |
 | `elapsed_hours` | Hours since this session's run started | Restarts at 0 after a resume. GPU-hours over all sessions are in checkpoint metadata and `train/checkpoint_gpu_hours` |
 | `est_cost_usd` | `elapsed_hours × gpu_hourly_usd` | 0 on Insomnia (`gpu_hourly_usd=0`). Not used to compare runs; see `tuning_setup.md` |
 
