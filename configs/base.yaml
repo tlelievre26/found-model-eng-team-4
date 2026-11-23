@@ -1,0 +1,50 @@
+# Shared settings for every training run (scripts/train.py) and sweep trial (scripts/run_sweep.py).
+# Every key a run can set is defined here. See docs/tuning_setup.md for why each value was chosen.
+# Override any key per run on the command line: scripts/train.py --config configs/smoke.yaml lora_rank=32
+
+# --- run identity and outputs
+run_name: null                 # required; outputs go to $CHECKPOINTS_DIR/<run_name>/ (re-running resumes it)
+output_dir: null               # null = $CHECKPOINTS_DIR/<run_name>; the sweep sets one folder per trial
+wandb_group: null
+wandb_tags: []                 # the GPU type is always added as a tag
+gpu_hourly_usd: null           # null = wandb_logging.DEFAULT_GPU_HOURLY_USD (the L4 VM); required on other GPUs
+
+# --- model
+model_path: null               # null = $MODELS_DIR/Qwen3-4B-Instruct-2507
+model_revision: cdbee75f17c01a7cc42f958dc650907174af0554  # checked against the downloaded copy; null = no check
+
+# --- data and budget
+train_datasets: [medmcqa]      # train splits from load_splits(name)["train"]
+train_limit: null              # smoke tests only: keep the first N train examples (sorted by id)
+epochs: 1.0                    # budget in epochs; a fraction takes a token-count prefix of that epoch's order
+seed: 42
+max_seq_len: 512               # nothing is truncated: a longer example is an error
+micro_batch_size: 16
+grad_accum_steps: 2            # effective batch 32
+group_chunk_batches: 64        # length grouping: sort chunks of this many micro-batches by length
+
+# --- QLoRA (4-bit NF4 base, double quantization, bf16 compute; see src/models/qwen.py:load_base_model)
+lora_rank: 16
+lora_alpha_ratio: 2.0          # lora_alpha = lora_alpha_ratio * lora_rank
+lora_dropout: 0.05
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+gradient_checkpointing: false
+
+# --- optimizer: paged 8-bit AdamW, constant LR after linear warmup
+learning_rate: 1.0e-4
+warmup_steps: 100
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+# --- checkpoints and resume
+checkpoints_per_epoch: 1       # kept (evaluated) checkpoints, evenly spaced in tokens; the end is always kept
+resume_every_minutes: 20.0     # rolling resume checkpoint, overwritten
+
+# --- evaluation (src/eval/stub.py until #12 lands)
+eval_split: null               # e.g. medmcqa:hp_dev; null = no evaluation
+eval_every_epochs: null        # evaluate every this many epochs (in tokens) and at the end; null = end only
+eval_limit: null               # smoke tests only: first N eval examples (sorted by id)
+eval_batch_size: 16
+
+# --- logging
+log_every_steps: 10
