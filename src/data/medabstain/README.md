@@ -66,15 +66,16 @@ python -m pip install pytest==9.2.0
 FME_SHARED_DIR=/path/to/shared python -m pytest -q -rs tests
 ```
 
-Local result: **49 passed, 1 skipped** with the published MedAbstain files.
-The skipped overlap test requires a MedQA export through `MEDQA_SPLITS_JSON`.
+The real-data tests skip when the MedAbstain files are missing. The MedQA overlap test
+uses `load_splits("medqa")` (skipped if the MedQA splits are not built) and is marked
+`xfail` until the overlap below is resolved.
 
 ```bash
-python -m scripts.verify_medabstain --data-dir /path/to/medabstain \
-  --medqa-splits /path/to/medqa_train_val.json
+python -m scripts.verify_medabstain            # add --skip-medqa-overlap to check the files only
 ```
 
-The export format is `{"train": [records], "val": [records]}`. Matching lowercases
+The overlap check compares against the MedQA `train` and `val` splits from
+`src.data.medqa_datasets.load_splits`. Matching lowercases
 question text, replaces punctuation with spaces, and collapses whitespace.
 Both displayed and original questions are compared; choices are ignored.
 Generic short-question matches may need review. Existing splits are unchanged.
@@ -86,9 +87,8 @@ Against the reproduced Issue #3 splits, each MedAbstain test variant matches
 matches **88 train / 12 validation** records. Original test/NA questions match
 zero official MedQA test records. Counts repeat across variants.
 
-The reproduction used Issue #3 commit
-`696eadb1a1ddc1f44c2e312f3d0367cf887ceba9`. Its MedQA split-ID SHA-256 matches the
-published reference: `6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c`.
-The overlap check fails for this export. These records are therefore not an
-independent evaluation set after training on the overlapping MedQA records.
-Shared-VM deployment and a resolution of this overlap are still pending.
+These counts are for the MedQA splits with SHA-256
+`6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c`, so the overlap check
+currently fails. MedAbstain questions are therefore not an independent evaluation set for
+a model trained on MedQA train/val. The planned unify-datasets PR will exclude MedAbstain
+test questions from MedQA train/val when the splits are built.

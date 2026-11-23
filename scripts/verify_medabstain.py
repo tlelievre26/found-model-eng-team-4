@@ -9,13 +9,14 @@ from pathlib import Path
 from src.data.medabstain import (
     FILES, check_medqa_overlap, load_medabstain,
 )
+from src.data.medqa_datasets import load_splits
 
 
 def verify(data_dir=None, medqa_splits=None):
     report = {
         "datasets": {},
         "medqa_overlap": {
-            "status": "pending", "reason": "MedQA train/val records were not supplied",
+            "status": "pending", "reason": "MedQA splits were not checked",
         },
     }
     loaded = {}
@@ -44,10 +45,10 @@ def verify(data_dir=None, medqa_splits=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path)
-    parser.add_argument("--medqa-splits", type=Path,
-                        help='Common-format JSON export: {"train": [...], "val": [...]}')
+    parser.add_argument("--skip-medqa-overlap", action="store_true",
+                        help="Do not check overlap with the MedQA train/val splits from load_splits")
     args = parser.parse_args()
-    splits = json.loads(args.medqa_splits.read_text()) if args.medqa_splits else None
+    splits = None if args.skip_medqa_overlap else load_splits("medqa")
     report = verify(args.data_dir, splits)
     print(json.dumps(report, indent=2))
     if splits is not None and any(

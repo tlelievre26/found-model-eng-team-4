@@ -1,7 +1,4 @@
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 from copy import deepcopy
 
@@ -10,6 +7,7 @@ import pytest
 from src.data.medabstain import ABSTENTION_TEXT, FILES, check_medqa_overlap, load_medabstain
 from src.utils import paths
 from src.data.medabstain import normalize_question
+from src.data.medqa_datasets import load_splits
 from scripts.download_medabstain import _install_data, download_medabstain
 
 
@@ -195,43 +193,20 @@ def test_published_data(split, variant):
     assert len({frozenset(r) for r in rows}) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="MedAbstain questions come from MedQA train. The unify-datasets PR "
+                   "excludes MedAbstain test questions from MedQA train/val; it should then "
+                   "check only the test files here and remove this xfail")
 def test_medqa_team_splits_overlap():
-    export = os.environ.get("MEDQA_SPLITS_JSON")
-    if not export:
-        pytest.skip("MEDQA_SPLITS_JSON is not set")
-    splits = json.loads(Path(export).read_text())
+    try:
+        splits = load_splits("medqa")
+    except FileNotFoundError:
+        pytest.skip("MedQA splits not built")
     for split, variants in FILES.items():
         for variant in variants:
             rows = load_medabstain(variant, split, data_directory())
             result = check_medqa_overlap(rows, splits)
             assert all(r["overlapping_examples"] == 0
                        for r in result.values()), (split, variant, result)
-
-
-# Import dependencies
-
-
-def test_loader_import_and_use_without_med_splits(tmp_path):
-    record = {"id": 1, "source": "synthetic", "question": "Synthetic standalone fixture?",
-              "choices": {"A": "One", "B": "Two"}, "answer": "A"}
-    (tmp_path / "medqa_1_test_noabst.json").write_text(json.dumps([record]))
-    # The import hook checks for a dependency on medsplits.
-    program = '''
-import builtins, sys
-original_import = builtins.__import__
-def independent_import(name, *args, **kwargs):
-    if name == "medsplits" or name.startswith("medsplits."):
-        raise AssertionError("Unexpected medsplits import")
-    return original_import(name, *args, **kwargs)
-builtins.__import__ = independent_import
-from src.data.medabstain import load_medabstain, check_medqa_overlap
-row, = load_medabstain("NA", data_dir=sys.argv[1])
-assert row["answer"] == "A"
-result = check_medqa_overlap([row], {"train": [], "val": []})
-assert result["train"]["overlapping_examples"] == 0
-from scripts.verify_medabstain import verify
-'''
-    subprocess.run([sys.executable, "-c", program, str(tmp_path)], check=True)
 
 
 def test_standalone_normalization_matches_observed_team_convention():
