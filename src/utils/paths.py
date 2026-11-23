@@ -31,3 +31,5 @@ MEDABSTAIN_DIR = DATA_DIR / "medabstain"
 # Training run outputs.
 CHECKPOINTS_DIR = SHARED_DIR / "checkpoints"
 
+# Per-question predictions and metadata for calibration/threshold selection.
+EVAL_DIR = SHARED_DIR / "eval"
