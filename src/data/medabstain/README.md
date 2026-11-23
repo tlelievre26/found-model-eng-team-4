@@ -1,7 +1,4 @@
-# found-model-eng-team-4
-This is the repo for our small medical question answering model we are building as a part of the Foundation Model Engineering course
-
-## MedAbstain
+# MedAbstain
 
 Source: [MedAbstain](https://github.com/sravanthi6m/MedAbstain), accompanying
 [Machcha et al., EACL 2026](https://aclanthology.org/2026.eacl-long.291/).
@@ -10,7 +7,7 @@ License: **CC-BY-NC 4.0**; noncommercial use with attribution. The download incl
 the upstream LICENSE and a `provenance.json` file with the commit and file checksums.
 Data files are stored outside the repository.
 
-### Usage
+## Usage
 
 ```bash
 python -m scripts.download_medabstain
@@ -51,7 +48,7 @@ Records contain `id`, `source`, `question`, `options`, and `answer`, plus
 The abstention letter is identified by option text, ignoring case and whitespace;
 it is `None` for NA/NAP. IDs repeat across variants.
 
-### Evaluation
+## Evaluation
 
 The upstream scorer uses the original answer for accuracy and conformal coverage
 in all four variants. A/AP abstention rate is a separate metric. Accordingly,
@@ -59,7 +56,7 @@ in all four variants. A/AP abstention rate is a separate metric. Accordingly,
 Original examples have `is_answerable=True`; perturbed examples have `None`
 because individual answerability is not annotated.
 
-### Tests
+## Tests
 
 ```bash
 python -m pip install pytest==9.2.0
@@ -79,7 +76,7 @@ question text, replaces punctuation with spaces, and collapses whitespace.
 Both displayed and original questions are compared; choices are ignored.
 Generic short-question matches may need review. Existing splits are unchanged.
 
-### Known overlap
+## Known overlap
 
 Against the reproduced Issue #3 splits, each MedAbstain test variant matches
 **903 MedQA train / 104 validation** records. Each available validation variant
