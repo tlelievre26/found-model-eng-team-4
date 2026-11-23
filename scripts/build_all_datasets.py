@@ -24,8 +24,8 @@ from scripts.verify_medabstain import verify as verify_medabstain
 from src.data.medqa_datasets import data
 from src.utils import paths
 
-# Disabled until the unify-datasets branch is verified; then True, so builds come only from a clean main.
-REQUIRE_CLEAN_MAIN = False
+# Builds and checks run only from a clean main equal to origin/main (see require_clean_main).
+REQUIRE_CLEAN_MAIN = True
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = Path(paths.DEFAULT_SHARED_DIR) / "data"
 MANIFEST = "manifest.json"
