@@ -27,12 +27,12 @@ Example format (any number of options is supported):
 
 | Dataset | Split | Rows | Use |
 |---|---|---|---|
-| MedMCQA | `train` | 158145 | Fine-tuning |
+| MedMCQA | `train` | 158146 | Fine-tuning |
 | MedMCQA | `hp_dev` | 2000 | Choose learning rate and LoRA rank |
 | MedMCQA | `calib` | 1500 | Fit the temperature T of each checkpoint |
 | MedMCQA | `thresh` | 2500 | Choose the abstention threshold of each checkpoint |
 | MedMCQA | `test` | 4168 | Final reported numbers only (the official MedMCQA validation set) |
-| MedQA | `train` | 9178 | Fine-tuning |
+| MedQA | `train` | 8171 | Fine-tuning |
 | MedQA | `val` | 1000 | Validation |
 | MedQA | `test` | 1273 | Final numbers (cross-dataset transfer); the complete official test set |
 
@@ -123,7 +123,7 @@ Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/
 | 0.7 | 32.9% | 31.5% | 35.6% | 21.8% | 51.5% |
 | median nearest similarity | 0.62 | 0.62 | 0.63 | 0.56 | 0.71 |
 
-Recomputed for the current build with the notebook's two analysis cells. The subset and `test` columns compare with the final train set; the last column comes from the pre-build cell, which samples train deduplicated with `exact_key` but without the conflict rule.
+Recomputed for the current build (`two-tier-v3`; identical to the `two-tier-v2` values) with the notebook's two analysis cells. The subset and `test` columns compare with the final train set; the last column comes from the pre-build cell, which samples train deduplicated with `exact_key` but without the conflict rule.
 
 The filter removes the near-copy excess at 0.8 and above (9.5% to 11.8% for the subsets vs 8.1% for `test`, where unfiltered train would be 34.6%). A smaller difference remains below the threshold (0.7 and the median), because `test` comes from different exams than train; this is a property of the source data, not something the filter can remove. Calibration and threshold choices should still be re-checked against `test` behaviour when final numbers are reported.
 
@@ -131,19 +131,21 @@ The filter removes the near-copy excess at 0.8 and above (9.5% to 11.8% for the 
 
 | Dataset | Raw train | Raw test | Final train | `val` | `hp_dev` | `calib` | `thresh` | Final test |
 |---|---|---|---|---|---|---|---|---|
-| MedMCQA | 182822 | 4183 (HF validation) | 158145 | none | 2000 | 1500 | 2500 | 4168 |
-| MedQA | 10178 | 1273 | 9178 | 1000 | none | none | none | 1273 |
+| MedMCQA | 182822 | 4183 (HF validation) | 158146 | none | 2000 | 1500 | 2500 | 4168 |
+| MedQA | 10178 | 1273 | 8171 | 1000 | none | none | none | 1273 |
 
 In this build no subset row matched another eval question, so the subsets have exactly their nominal sizes (2000 / 1500 / 2500). In general the leak guard can drop a few subset rows, which leaves a subset slightly below its nominal size.
 
-| Dataset | Train copies removed | Train rows dropped for conflicting answers | Test copies removed | Train rows matching an eval question | Subset rows matching another eval question | True copies across the two train sets |
-|---|---|---|---|---|---|---|
-| MedMCQA | 18106 | 379 | 15 | 192 | 0 (`hp_dev`), 0 (`calib`), 0 (`thresh`), 0 (`test`) | 0 |
-| MedQA | 0 | 0 | 0 | 0 | 0 | 0 |
+| Dataset | Train copies removed | Train rows dropped for conflicting answers | Test copies removed | MedAbstain test questions removed (train / test) | Train rows matching an eval question | Subset rows matching another eval question | True copies across the two train sets |
+|---|---|---|---|---|---|---|---|
+| MedMCQA | 18106 | 379 | 15 | 0 / 0 | 191 | 0 (`hp_dev`), 0 (`calib`), 0 (`thresh`), 0 (`test`) | 0 |
+| MedQA | 0 | 0 | 0 | 1007 / 0 | 0 | 0 (`val`), 0 (`test`) | 0 |
 
 Similarity filter on MedMCQA: 12000 shuffled candidates examined, 3471 flagged, subsets filled from the rest.
 
-Total removed: 18692 (all MedMCQA). Removed copies whose correct answer text differed from the first copy (label noise in the source): MedMCQA train 400, in 379 questions, all of whose copies are dropped (the 379 in the table are the first copies, which plain deduplication would have kept); MedMCQA test 2 (the first copy is kept, as before).
+All 1007 MedAbstain test questions match exactly one MedQA train row each and are removed before `val` is carved, so MedQA train shrinks from 9178 to 8171 while `val` keeps 1000 rows; the re-carved `val` is a different set of questions than before. No MedMCQA row matches a MedAbstain test question. MedMCQA's subsets and `test` are unchanged, but its train gains one row (191 instead of 192 rows matching an eval question): it shares a stem (different options) with a MedQA question that was in the old MedQA `val` and is now in MedQA train, where only true copies are removed.
+
+Total removed: 19698 (MedMCQA 18691, MedQA 1007). Removed copies whose correct answer text differed from the first copy (label noise in the source): MedMCQA train 400, in 379 questions, all of whose copies are dropped (the 379 in the table are the first copies, which plain deduplication would have kept); MedMCQA test 2 (the first copy is kept, as before).
 
 ## Running it
 
@@ -170,21 +172,26 @@ The splits are a function of: the two pinned dataset commits, the pinned MedAbst
 - `stats.json` records the Python, `datasets` and `rapidfuzz` versions of the build, so a mismatch can be traced.
 - `manifest.json` (written by `scripts/build_all_datasets.py`) records the git commit, branch and whether the tree was clean, the library versions, the dataset and MedAbstain revisions, `current_config()`, the SHA-256 of every file in `splits/` and `processed/`, the MedAbstain checksums from `provenance.json`, the split sizes and the removal counts. `--verify-only` recomputes all of them and reruns the validation, so a copied folder can confirm it is identical.
 - To compare two runs or two machines by hand, checksum the id files: `sha256sum <DATA_DIR>/splits/medmcqa.json <DATA_DIR>/splits/medqa.json` (or run the checksum cell). Equal checksums mean equal splits.
-- Reference checksums (SHA-256) of the id files from the current build (seed 42, the pinned commits above, `DEDUPE_SCHEME = "two-tier-v2"`, similarity threshold 0.85, Python 3.13.5, `datasets` 5.2.0, `rapidfuzz` 3.14.6):
+- Reference checksums (SHA-256) from the current build (seed 42, the pinned commits above, MedAbstain commit `091e5c22111fffeb51c0c2e69b65d0a21a1e4164`, `DEDUPE_SCHEME = "two-tier-v3"`, similarity threshold 0.85, Python 3.13.5, `datasets` 5.2.0, `rapidfuzz` 3.14.6), as recorded in `manifest.json`:
 
   | File | SHA-256 |
   |---|---|
-  | `splits/medmcqa.json` | `71d5c9e6cd7c8b785b2555bf57575dc1226e88491e245dcb94fd7d52633db4df` |
-  | `splits/medqa.json` | `6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c` |
+  | `splits/medmcqa.json` | `37279a17f77af9c6ebfa732dc5c72b76797b5b279dd47167f9ba72def0e7ee50` |
+  | `splits/medqa.json` | `ef91dd8ceadf7f0e2c1a55554b7387231c597aa03c8e8f812dd6c2e346d381d3` |
+  | `splits/stats.json` | `35cca749e7ca1afd65655e161690342afec8c97783e9e904dfe6a0b4210cde6b` |
+  | `processed/medmcqa.jsonl` | `1a696ea5da38c9ae0fd0ab367e64d2ca54267eebd53833268b347ecf15e82c12` |
+  | `processed/medqa.jsonl` | `ad644a43e2caaea3427ceceeca2424d94fe2ec5064af2a2eb0939144a05c63b0` |
 
-  These supersede the checksums of the original v6 build (`DEDUPE_SCHEME = "two-tier-v1"`, Python 3.13.18, `datasets` 4.8.5): its `medmcqa.json` was `7bc0abd2202114ea25c13b3d11aafde2fc9c7469db261042eaa4e5c1764ebaad`; `medqa.json` is unchanged. Rebuilding the v6 code with Python 3.13.5 and `datasets` 5.2.0 reproduced both original checksums exactly, so the change in `medmcqa.json` comes only from dropping conflicting train copies.
+  `stats.json` also records the library versions, so its checksum matches only for a build with the same environment. These supersede the `two-tier-v2` build (`medmcqa.json` `71d5c9e6cd7c8b785b2555bf57575dc1226e88491e245dcb94fd7d52633db4df`, `medqa.json` `6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c`), which kept the MedAbstain test questions in MedQA train and `val`; `medmcqa.json` differs from it only by the one MedMCQA train row described in Results.
 
-  Every independent build with unchanged settings should print the same two values; this is how everyone confirms they have the identical dataset. If you change any setting, the values change and must be updated here.
+  The `two-tier-v2` checksums in turn superseded the original v6 build (`DEDUPE_SCHEME = "two-tier-v1"`, Python 3.13.18, `datasets` 4.8.5): its `medmcqa.json` was `7bc0abd2202114ea25c13b3d11aafde2fc9c7469db261042eaa4e5c1764ebaad`; `medqa.json` was unchanged. Rebuilding the v6 code with Python 3.13.5 and `datasets` 5.2.0 reproduced both original checksums exactly, so the change in `medmcqa.json` comes only from dropping conflicting train copies.
+
+  Every independent build with unchanged settings should give the same id-file values; this is how everyone confirms they have the identical dataset. If you change any setting, the values change and must be updated here.
 - Python's random module does not formally guarantee identical shuffles across Python versions, and `rapidfuzz` could in principle change a similarity at the filter boundary in another version. If two checksums differ, compare the `environment` entries in the two `stats.json` files first.
 
 ## Freeze
 
-Record the checksums above and do not rebuild once any tuning has started. A rebuild can change ids, which would invalidate every run that already used the old subsets. Earlier build versions (v3, v4, v5, and the original v6 build with `two-tier-v1`) produced different `medmcqa.json` files and must not be mixed with results on the current splits.
+Record the checksums above and do not rebuild once any tuning has started. A rebuild can change ids, which would invalidate every run that already used the old subsets. Earlier build versions (v3, v4, v5, the original v6 build with `two-tier-v1`, and `two-tier-v2`) produced different id files and must not be mixed with results on the current splits.
 
 ## Changing a setting
 

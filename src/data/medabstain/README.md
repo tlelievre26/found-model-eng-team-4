@@ -93,4 +93,6 @@ is in the official MedQA test set. The splits built before `DEDUPE_SCHEME = "two
 104 in validation**. Since `two-tier-v3`, `build_all()` removes every MedAbstain test question from all
 MedQA and MedMCQA splits before carving (see `src/data/medqa_datasets/README.md`), so the test files have
 zero overlap and MedAbstain stays independent of a model trained on MedQA. The `val_100` and few-shot files
-are not excluded and still overlap MedQA train/val.
+are not excluded and still overlap MedQA train/val: against the `two-tier-v3` splits (MedQA SHA-256
+`ef91dd8ceadf7f0e2c1a55554b7387231c597aa03c8e8f812dd6c2e346d381d3`), each test variant matches
+**0 train / 0 validation** records and each validation variant matches **90 train / 10 validation**.
