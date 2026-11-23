@@ -52,11 +52,13 @@ def main():
     splits = None if args.skip_medqa_overlap else load_splits("medqa")
     report = verify(args.data_dir, splits)
     print(json.dumps(report, indent=2))
+    # Only the test files are excluded from MedQA; the val_100 files overlap MedQA train/val by design.
     if splits is not None and any(
         result[split]["overlapping_examples"]
-        for result in report["medqa_overlap"]["results"].values() for split in ("train", "val")
+        for key, result in report["medqa_overlap"]["results"].items() if key.startswith("test/")
+        for split in ("train", "val")
     ):
-        raise SystemExit("MedQA question overlaps detected")
+        raise SystemExit("MedAbstain test questions found in MedQA train/val")
 
 
 if __name__ == "__main__":

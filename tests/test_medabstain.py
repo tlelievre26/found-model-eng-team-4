@@ -193,20 +193,17 @@ def test_published_data(split, variant):
     assert len({frozenset(r) for r in rows}) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="MedAbstain questions come from MedQA train. The unify-datasets PR "
-                   "excludes MedAbstain test questions from MedQA train/val; it should then "
-                   "check only the test files here and remove this xfail")
 def test_medqa_team_splits_overlap():
+    """The build excludes MedAbstain test questions from MedQA; the val_100 files still overlap by design."""
     try:
         splits = load_splits("medqa")
     except FileNotFoundError:
         pytest.skip("MedQA splits not built")
-    for split, variants in FILES.items():
-        for variant in variants:
-            rows = load_medabstain(variant, split, data_directory())
-            result = check_medqa_overlap(rows, splits)
-            assert all(r["overlapping_examples"] == 0
-                       for r in result.values()), (split, variant, result)
+    for variant in FILES["test"]:
+        rows = load_medabstain(variant, "test", data_directory())
+        result = check_medqa_overlap(rows, splits)
+        assert all(r["overlapping_examples"] == 0
+                   for r in result.values()), (variant, result)
 
 
 def test_standalone_normalization_matches_observed_team_convention():

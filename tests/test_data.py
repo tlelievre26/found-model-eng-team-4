@@ -110,6 +110,15 @@ def test_medqa_test_is_untouched(splits):
     assert {e["id"] for e in splits["medqa"]["test"]} == {f"medqa-test-{i}" for i in range(n_raw)}
 
 
+def test_no_medabstain_test_question_in_any_split(splits):
+    from src.data.medabstain import load_medabstain
+
+    protected = {data.normalize(r["question"]) for r in load_medabstain("NA", "test")}
+    hits = [e["id"] for n in NAMES for sp in split_names(n) for e in splits[n][sp]
+            if data.normalize(e["question"]) in protected]
+    assert not hits, hits[:5]
+
+
 def _build_in_fresh_process(out_dir, hash_seed):
     """Build in a new Python process with its own EMPTY similarity cache, so the search is really recomputed."""
     env = {**os.environ, "PYTHONHASHSEED": str(hash_seed), "FME_SHARED_DIR": str(data.DATA_DIR.parent)}
