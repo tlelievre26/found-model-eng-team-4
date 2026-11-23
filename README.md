@@ -67,8 +67,11 @@ Python 3.11+ is required.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
+pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu126
 pip install -e ".[dev]"
 ```
+
+Install torch from PyTorch's CUDA 12.6 index first, as above. `pyproject.toml` pins the version but can't choose the CUDA build, and the default PyPI wheel may need a newer NVIDIA driver than some machines have (Insomnia's A6000 nodes support CUDA up to 12.9). The CUDA 12.6 build runs on both the L4 VM and Insomnia. Check with `nvidia-smi` and `python -c "import torch; print(torch.__version__, torch.cuda.is_available())"`.
 
 `-e` installs the package in editable mode, so your code changes take effect without reinstalling. Dependencies are pinned to exact versions in [`pyproject.toml`](pyproject.toml) — change them only through a PR so everyone stays on the same stack.
 
