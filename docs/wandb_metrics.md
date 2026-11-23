@@ -23,7 +23,8 @@ step). Each value is an average over the steps since the previous log point, unl
 | `p_correct` | Mean probability of the correct letter | Softmax over the **full vocabulary** at the answer position, the gold letter's probability, averaged | Rises with training. It is `exp(-loss)`-like but averaged in probability space |
 | `letter_mass` | Probability mass on the option letters | Sum of full-vocabulary probabilities of the question's option letters (A–D for MedMCQA), averaged | Should stay close to 1 (the base model already answers with a letter). **A falling letter mass means the model is drifting off answering with a letter**, which the letter-only scores used for evaluation would hide |
 | `pred_frac_A` … `pred_frac_D` | How often each letter is predicted | Share of questions in the interval whose argmax option is that letter | Roughly matches the gold-letter distribution. One letter taking over means a positional bias or collapse |
-| `pad_frac` | Padding in each micro-batch | `1 − real tokens / (batch × padded length)`, averaged over micro-batches | About 0.01 with length grouping. A large value means length grouping isn't working |
+| `pad_frac` | Padding in each forward pass | `1 − real tokens / (rows × padded length)`, averaged over forward passes | About 0.01 with length grouping. A large value means length grouping isn't working |
+| `forwards_per_step` | Forward/backward passes per optimizer step | Forward passes ÷ steps in the interval | 2 when no micro-batch was split (2 micro-batches per step). Higher values mean wide micro-batches were split by `max_tokens_per_forward` to bound memory |
 | `epoch` | Epochs completed (float) | `tokens_seen / tokens in one full epoch` | The sweep trials end at 0.25 |
 | `resume_count` | Times this run was resumed | Counter stored in the resume state | 0 for an uninterrupted run. Training points shortly before a resume may appear twice |
 
@@ -60,7 +61,7 @@ Logged by `wandb_logging.log_train` with every training log point.
 |---|---|---|
 | `tokens_per_sec` | Non-padding tokens processed per second since the previous log point | Includes any evaluation or checkpoint saving in that interval, so it dips at eval points. For the pure training throughput use `train_tokens_per_sec` in the run summary |
 | `gpu_mem_peak_gb` | Peak GPU memory allocated by PyTorch since the run (session) started | **The number to check against the L4's 24 GB** (it does not include the CUDA context, about 0.5 GB) |
-| `gpu_mem_allocated_gb` / `gpu_mem_reserved_gb` | Memory currently allocated / held by PyTorch's caching allocator | Reserved is closer to what `nvidia-smi` shows |
+| `gpu_mem_allocated_gb` / `gpu_mem_reserved_gb` | Memory currently allocated / held by PyTorch's caching allocator | Reserved is closer to what `nvidia-smi` shows, and is what actually has to fit. The scripts set `expandable_segments` to keep it close to allocated (17.7 GiB at rank 32 on the A6000) |
 | `elapsed_hours` | Hours since this session's run started | Restarts at 0 after a resume. GPU-hours over all sessions are in checkpoint metadata and `train/checkpoint_gpu_hours` |
 | `est_cost_usd` | `elapsed_hours × gpu_hourly_usd` | 0 on Insomnia (`gpu_hourly_usd=0`). Not used to compare runs; see `tuning_setup.md` |
 
