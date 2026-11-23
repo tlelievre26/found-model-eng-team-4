@@ -35,7 +35,7 @@ def _to_common_format(raw: dict, variant: str, split: str, filename: str) -> dic
     """Convert a source record to the common schema, retaining its metadata."""
     return {
         "id": f"medabstain-{split}-{raw['id']}",  # upstream ids are ints that repeat between test and val
-        "source": raw["source"],
+        "source": "medabstain",  # dataset name, as in the common format; upstream value stays in metadata.raw
         "question": raw["question"],
         "options": dict(raw["choices"]),
         "answer": raw["answer"],

@@ -44,7 +44,8 @@ The loader supports the test and validation files listed above.
 
 Records contain `id`, `source`, `question`, `options`, and `answer`, plus
 `original_answer`, `evaluation_target`, `abstain_option`, `is_perturbed`,
-`is_answerable`, and `metadata`. Metadata retains the complete upstream record.
+`is_answerable`, and `metadata`. `source` is always `"medabstain"` (upstream says `MEDQA_1`).
+Metadata retains the complete upstream record.
 The abstention letter is identified by option text, ignoring case and whitespace;
 it is `None` for NA/NAP. IDs are `medabstain-<split>-<upstream id>`: the same question has the
 same ID in all four variants, and test and val IDs never collide (upstream reuses 54 integer

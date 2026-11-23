@@ -37,7 +37,8 @@ def test_mapping_and_schema(tmp_path, split, variant):
     raw = json.loads(path.read_text())[0]
     row, = load_medabstain(variant, split, tmp_path)
     assert row["id"] == f"medabstain-{split}-{raw['id']}"
-    for key in ("source", "question", "answer"):
+    assert row["source"] == "medabstain"
+    for key in ("question", "answer"):
         assert row[key] == raw[key]
     assert row["options"] == raw["choices"]
     assert row["original_answer"] == row["evaluation_target"] == raw["answer"]
