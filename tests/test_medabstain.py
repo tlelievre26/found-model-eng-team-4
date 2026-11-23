@@ -175,7 +175,7 @@ def test_refuses_repository_destination():
 
 
 def data_directory():
-    directory = Path(os.environ.get("MEDABSTAIN_DATA_DIR", paths.MEDABSTAIN_DIR))
+    directory = paths.MEDABSTAIN_DIR
     if not directory.is_dir():
         pytest.skip("MedAbstain data directory not found")
     return directory

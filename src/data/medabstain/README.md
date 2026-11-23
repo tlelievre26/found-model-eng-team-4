@@ -14,12 +14,12 @@ python -m scripts.download_medabstain
 python -m scripts.verify_medabstain
 ```
 
-The default location is `/shared/data/medabstain/`. `DATA_DIR` sets the parent data
-directory; `FME_SHARED_DIR` sets the shared root when `DATA_DIR` is unset.
-These settings are read when `src.utils.paths` is imported.
+The location is `paths.MEDABSTAIN_DIR` from `src/utils/paths.py`: `$FME_SHARED_DIR/data/medabstain/`,
+which is `/shared/data/medabstain/` on the team VM. On other machines (e.g. Insomnia), set
+`FME_SHARED_DIR` before running anything; `--data-dir` / `data_dir=` override it for one call.
 
 ```bash
-export DATA_DIR=/path/to/data
+export FME_SHARED_DIR=/path/to/shared
 python -m scripts.download_medabstain
 ```
 
@@ -60,7 +60,7 @@ because individual answerability is not annotated.
 
 ```bash
 python -m pip install pytest==9.2.0
-MEDABSTAIN_DATA_DIR=/path/to/medabstain python -m pytest -q -rs tests
+FME_SHARED_DIR=/path/to/shared python -m pytest -q -rs tests
 ```
 
 Local result: **49 passed, 1 skipped** with the published MedAbstain files.
