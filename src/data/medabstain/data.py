@@ -34,7 +34,7 @@ def _normalized_text(text: str) -> str:
 def _to_common_format(raw: dict, variant: str, split: str, filename: str) -> dict:
     """Convert a source record to the common schema, retaining its metadata."""
     return {
-        "id": raw["id"],
+        "id": f"medabstain-{split}-{raw['id']}",  # upstream ids are ints that repeat between test and val
         "source": raw["source"],
         "question": raw["question"],
         "options": dict(raw["choices"]),

@@ -36,7 +36,8 @@ def test_mapping_and_schema(tmp_path, split, variant):
     path = write(tmp_path, variant, split)
     raw = json.loads(path.read_text())[0]
     row, = load_medabstain(variant, split, tmp_path)
-    for key in ("id", "source", "question", "answer"):
+    assert row["id"] == f"medabstain-{split}-{raw['id']}"
+    for key in ("source", "question", "answer"):
         assert row[key] == raw[key]
     assert row["options"] == raw["choices"]
     assert row["original_answer"] == row["evaluation_target"] == raw["answer"]
@@ -136,8 +137,8 @@ def test_overlap_and_input_preservation(tmp_path):
               "val": [{"question": "which option", "options": row["options"]}]}
     before = deepcopy(splits)
     assert check_medqa_overlap([row], splits) == {
-        "train": {"overlapping_examples": 1, "ids": [1]},
-        "val": {"overlapping_examples": 1, "ids": [1]},
+        "train": {"overlapping_examples": 1, "ids": ["medabstain-test-1"]},
+        "val": {"overlapping_examples": 1, "ids": ["medabstain-test-1"]},
     }
     assert splits == before
     assert check_medqa_overlap([row], {"train": [], "val": []})["train"]["overlapping_examples"] == 0

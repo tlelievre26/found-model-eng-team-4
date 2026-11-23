@@ -46,7 +46,9 @@ Records contain `id`, `source`, `question`, `options`, and `answer`, plus
 `original_answer`, `evaluation_target`, `abstain_option`, `is_perturbed`,
 `is_answerable`, and `metadata`. Metadata retains the complete upstream record.
 The abstention letter is identified by option text, ignoring case and whitespace;
-it is `None` for NA/NAP. IDs repeat across variants.
+it is `None` for NA/NAP. IDs are `medabstain-<split>-<upstream id>`: the same question has the
+same ID in all four variants, and test and val IDs never collide (upstream reuses 54 integer
+ids between them for different questions). The upstream record is kept in `metadata.raw`.
 
 ## Evaluation
 
