@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from src.data.medqa_datasets import build_messages
 from src.training import data as td
 from src.training.config import apply_overrides, load_config, parse_overrides
 
@@ -99,9 +100,8 @@ def test_only_the_answer_letter_is_supervised():
         pos = int((labels[row] != td.IGNORE_INDEX).nonzero())
         assert int(labels[row, pos]) == ord(ex["answer"]) == int(batch["input_ids"][row, pos])
         # The tokens before the answer are exactly the scoring prompt (left-padded).
-        prompt = tok.apply_chat_template([{"role": "user", "content": ""}], add_generation_prompt=True)
-        assert prompt.endswith("<assistant>")
-        assert bytes(batch["input_ids"][row, pos - len("<assistant>"):pos].tolist()).decode() == "<assistant>"
+        scoring = tok.encode(tok.apply_chat_template(build_messages(ex), add_generation_prompt=True))
+        assert batch["input_ids"][row, pos - len(scoring):pos].tolist() == scoring
     assert (batch["attention_mask"].sum(1) == torch.tensor([len(x["input_ids"]) for x in items])).all()
 
 
