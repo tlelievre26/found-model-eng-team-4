@@ -74,3 +74,17 @@ def test_only_one_active_run():
     with pytest.raises(RuntimeError):
         wl.start_run("b", {})
     wl.finish_run()
+
+
+def test_resume_passes_run_id_and_position(monkeypatch):
+    seen = {}
+    real_init = wl.wandb.init
+
+    def init(**kwargs):
+        seen.update(kwargs)
+        return real_init(**{k: v for k, v in kwargs.items() if k not in ("id", "resume")})
+    monkeypatch.setattr(wl.wandb, "init", init)
+    run = wl.start_run("test", {}, run_id="abc123", step=7, tokens_seen=900)
+    assert seen["id"] == "abc123" and seen["resume"] == "allow"
+    assert (run.step, run.tokens_seen, run._last_log_tokens) == (7, 900, 900)
+    wl.finish_run()
