@@ -78,7 +78,7 @@ def test_invalid_batch_size(size):
 
 
 def test_adapter_hook():
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(FileNotFoundError):
         wrapper().load_adapter("adapter")
 
 

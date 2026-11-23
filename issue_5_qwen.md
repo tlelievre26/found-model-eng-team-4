@@ -1,120 +1,85 @@
 # Issue #5: Qwen model wrapper
 
-## What this work does
+## What this does
 
-This adds a wrapper for `Qwen/Qwen3-4B-Instruct-2507`. It loads the base model
-in 4-bit precision and scores multiple-choice questions using the next-token
-scores for the answer letters. It returns a probability for each available
-letter and the predicted letter, with support for single questions and batches,
-including questions with six options.
-
-CPU tests: **10 passed, 1 skipped**. The skipped test needs the real Qwen
-tokenizer. GPU loading, memory usage, medical-data accuracy, and integration
-with the shared prompt/data loaders still need to be checked on the VM.
-The LoRA interface is present but not implemented yet.
+Load Qwen3-4B-Instruct-2507 locally in 4-bit NF4 with double quantization and
+bf16 compute, shared with #7 training. Score answer letters in one forward pass
+per batch and return normalized option probabilities plus the predicted letter.
+Four-, five-, and six-option examples use the same interface.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `src/models/qwen.py` | `QwenWrapper`: local 4-bit model loading, single-question scoring, batch scoring, answer-letter token checks, and the future LoRA adapter hook. |
-| `tests/test_qwen.py` | CPU tests using a fake model/tokenizer to check probability normalization, four/six options, batching, input checks, and the adapter placeholder. No model download is needed. |
-| `tests/test_qwen_tokenizer.py` | Optional test with the real local tokenizer. Checks answer-letter boundaries in a rendered chat prompt and prints bare versus space-prefixed token IDs. |
-| `scripts/validate_qwen.py` | VM validation on labeled MedMCQA examples and a real six-option MedAbstain example. Prints accuracy and peak GPU memory, and checks that probabilities sum to one. |
-| `issue_5_qwen.md` | Scope, file descriptions, dependencies, and usage instructions. |
+| `src/models/qwen.py` | Shared `load_base_model`, single/batch scoring, shared prompt, local PEFT checkpoint loading, and training-mode restoration. |
+| `scripts/validate_qwen.py` | CUDA check using 100 MedMCQA `hp_dev` examples and a real six-option MedAbstain example; prints accuracy and peak GPU memory. Independent of #12. |
+| `tests/test_qwen.py` | CPU tests for normalized scores, batching, invalid inputs and token boundaries. |
+| `tests/test_qwen_integration.py` | Shared prompt, no answer leakage, base-loader contract, adapter initialization and training-mode restoration checks. |
+| `tests/test_qwen_peft.py` | Small random Qwen3 batch/single comparison and real PEFT save/load round trip on CPU. |
+| `tests/test_qwen_tokenizer.py` | Optional real local tokenizer checks with the shared prompt. |
 
-## Dependencies and remaining integration
+## Dependencies and remaining validation
 
-Runtime packages: `torch`, `transformers` with Qwen3 support, `accelerate`, and
-`bitsandbytes`. Tests also need `pytest`. Use the team's pinned versions from
-Issue #1 when available. Real 4-bit loading in this implementation requires a
-CUDA GPU and local model/tokenizer files; it does not download missing weights.
+Runtime: the team's pinned `torch`, `transformers`, `accelerate`, `bitsandbytes`,
+`peft`, and `wandb`; tests also use `pytest`. Project pins are unchanged.
 
-| Dependency | Needed from the team | What may need changing after it is available |
-|---|---|---|
-| #1: repo setup (`tlelievre26`) | Shared package structure, pinned dependencies, and `src.utils.paths.MODELS_DIR`. | Connect the default model path to the shared paths helper and verify imports under the merged package setup. |
-| #2: GPU VM (`victorianian610`) | L4 access, model/tokenizer files, and the exact model directory. | Override `model_path` if needed, then test 4-bit loading and record peak GPU memory. |
-| #3: data and prompt (`woohyeonher`) | The actual shared prompt function's import path, common-format examples, and fixed MedMCQA split IDs. | Pass that function as `prompt_fn`; update the validation data input to use the final loader or its JSONL export. Rerun token checks with the real shared prompt and adjust token handling if needed. |
-| #4: MedAbstain (`Jzzzc-zj`) | Real six-option examples converted to the common format. | Connect the loader or export its examples to JSONL; use `options` rather than raw `choices`. Check six-option scoring with real data. |
-| #11: validation subsets | Agreed `hp_dev`, `calib`, `thresh`, and `test` split IDs. | Confirm which held-out subset to use for the ~100-question check and keep final test data separate from tuning. |
+| Team work | Interface used / remaining integration |
+|---|---|
+| #1 shared paths | `src.utils.paths.MODELS_DIR`. Set `FME_SHARED_DIR` before starting Python. Override `model_path` if the model folder has another name. |
+| #2 GPU setup | CUDA with bf16 support and local model/tokenizer files. GPU loading and memory validation still need the real machine. |
+| #3 shared prompt/data | Default `build_messages(example)` excludes the gold answer. `load_splits("medmcqa")["hp_dev"]` selects the fixed subset, rather than reading the mixed processed JSONL directly. |
+| #4 MedAbstain | `load_medabstain("A", data_dir=...)` supplies a six-option smoke example. This verifies scoring, not an abstention policy. |
+| #11 data subsets | Use frozen `hp_dev` for tuning, `calib` for calibration, `thresh` for thresholds, and `test` for final reporting. Use the team-approved data build. |
 
-These inputs have not been integrated or verified in this branch. That does
-not mean the owners have not started their work. Once they are available,
-complete the shared-prompt/tokenizer checks, ~100-question accuracy check, and
-six-option GPU check before marking #5 fully complete.
+The real Qwen tokenizer passes the shared-prompt A–F boundary check. CUDA
+4-bit loading, ~100-question medical accuracy clearly above 25%, six-option
+real-data scoring, and real trained checkpoint evaluation remain pending. CPU tests do not establish these results.
 
-## How others can use this code
-
-### Input and shared prompt
-
-Run from the repository root. Each example uses this common format:
+## How others use it
 
 ```python
-example = {
-    "id": "example-1",
-    "question": "What is 2 + 2?",
-    "options": {"A": "3", "B": "4", "C": "5", "D": "6"},
-    "answer": "B",
-}
-```
+from src.models.qwen import QwenWrapper, load_base_model
 
-Scoring needs `question` and `options`; validation also needs `answer`.
-Option keys must be single uppercase letters. The required `prompt_fn` takes
-one example and returns chat messages such as
-`[{"role": "user", "content": "question + lettered options + answer instruction"}]`.
-Use the shared formatter from #3 so evaluation and training use the same prompt.
-The wrapper applies the tokenizer's chat template itself.
-
-### Single-question and batch scoring
-
-```python
-from src.models.qwen import QwenWrapper
-
-# shared_prompt_fn is the function from #3; its import path is still to be confirmed.
-wrapper = QwenWrapper(
-    model_path="/shared/models/Qwen3-4B-Instruct-2507",
-    prompt_fn=shared_prompt_fn,
-)
-
+wrapper = QwenWrapper()  # MODELS_DIR / "Qwen3-4B-Instruct-2507"
+# example: {"id": ..., "question": ..., "options": {"A": ..., "B": ...}, "answer": ...}
 result = wrapper.score(example)
-probabilities = result["probabilities"]  # {"A": ..., "B": ..., "C": ..., "D": ...}
-predicted_letter = result["prediction"]
-
-results = wrapper.score_batch([example], batch_size=4)
+results = wrapper.score_batch(examples, batch_size=4)
+# {"probabilities": {"A": ..., "B": ...}, "prediction": "A"}
 ```
 
-Batch results are returned in input order. Probabilities sum to approximately
-one over the available answer letters; they are not calibrated confidence
-scores. The caller keeps the example IDs and correct answers alongside results.
+Results preserve input order. Option keys are uppercase single letters. Scores
+sum to approximately one over the allowed letters, not the full vocabulary.
+Ties select the first letter alphabetically. They are not calibrated confidence.
+The wrapper applies the chat template once and rejects assistant answer turns.
 
-- **#12 evaluation** directly uses `score_batch` to compute accuracy, NLL, and
-  ECE, and saves per-question predictions for later calibration/abstention work.
-- **#7 training** can reuse the model-loading setup and must implement the
-  adapter hook so saved LoRA checkpoints can be loaded for evaluation.
-  `load_adapter(path)` and `adapter_path` currently raise `NotImplementedError`.
-  Scoring methods use inference mode; training needs its own loss and training setup.
+**#7 training:** `model, tokenizer = load_base_model(model_path, device_map=...)`
+is the same entry point imported by the current training branch. Training owns
+LoRA preparation and loss computation. For evaluation of the current in-memory
+model, use `QwenWrapper(model=training_model, tokenizer=tokenizer)`; scoring
+restores its original training flag even on errors. Final-token-only Qwen3
+logits avoid storing logits for every prompt position on the L4.
 
-Keep the class/method names and result keys consistent with these callers.
+**#12 evaluation:** call `score_batch` and consume `probabilities` / `prediction`.
+Keep IDs and correct answers with the caller. No W&B run is started by scoring.
 
-### Tests and VM validation
+**Saved adapters:** `QwenWrapper(adapter_path="/path/to/checkpoint")` loads local
+PEFT weights after base initialization, for evaluation. Use a fresh wrapper for
+each saved adapter. Do not pass `adapter_path` for an already attached training
+model; injected PEFT models can be scored directly.
 
 ```sh
-python3 -m pytest -q tests
-QWEN_TOKENIZER_PATH=/shared/models/Qwen3-4B-Instruct-2507 python3 -m pytest -s tests/test_qwen_tokenizer.py
+python -m pytest -q
+QWEN_TOKENIZER_PATH=/path/to/local/model python -m pytest -s tests/test_qwen_tokenizer.py
+WANDB_MODE=offline python scripts/validate_qwen.py --limit 100 --batch-size 4
 ```
 
-For VM validation, replace the uppercase placeholders below with the real
-shared formatter and common-format JSONL paths. Each JSONL line is one example.
+The validation script uses the team's existing W&B helper. On non-L4 hardware,
+pass the appropriate `--gpu-hourly-usd`. Real weights and data stay outside git.
 
-```sh
-python3 scripts/validate_qwen.py \
-  --prompt-function YOUR_SHARED_MODULE:YOUR_SHARED_FUNCTION \
-  --data /shared/data/YOUR_MEDMCQA_VALIDATION.jsonl \
-  --six-option-data /shared/data/YOUR_MEDABSTAIN.jsonl \
-  --limit 100 --batch-size 4
-```
+## Verification on this Mac
 
-The script prints the sample count, accuracy, GPU type, peak memory, and the
-six-option result. It fails if probabilities are not normalized or accuracy is
-at or below 25%. For acceptance, check that accuracy is clearly above that
-baseline and memory fits the L4; record the measured results after the VM run.
+Full local suite: **91 passed, 19 skipped**. Real shared-prompt Qwen tokenizer,
+tiny random Qwen3 mixed-length batching, and actual PEFT save/load passed.
+Skipped tests require real dataset builds. Local test environment: Python 3.11,
+torch 2.6.0, transformers 4.57.6, peft 0.18.1, accelerate 1.4.0. This is a
+compatibility check, not validation of the team's pinned CUDA stack.

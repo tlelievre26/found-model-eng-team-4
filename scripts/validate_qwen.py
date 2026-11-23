@@ -1,6 +1,5 @@
-"""VM validation using local common-format JSONL and Issue #3's prompt function."""
+"""Smoke-test the shared prompt/loaders and real Qwen on a CUDA machine."""
 import argparse
-import importlib
 import json
 from pathlib import Path
 import sys
@@ -8,55 +7,65 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
-
+from src.data.medqa_datasets import load_splits
+from src.data.medabstain.data import load_medabstain
 from src.models.qwen import DEFAULT_MODEL_PATH, QwenWrapper
+from src.utils import paths, wandb_logging as wl
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", required=True, help="MedMCQA common-format validation JSONL")
-    parser.add_argument("--prompt-function", required=True, help="Actual shared formatter: module:function")
-    parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH)
-    parser.add_argument("--six-option-data", required=True, help="Common-format MedAbstain JSONL")
+    parser.add_argument("--model-path", default=str(DEFAULT_MODEL_PATH))
+    parser.add_argument("--data-dir", type=Path, default=paths.DATA_DIR)
+    parser.add_argument("--medabstain-dir", type=Path, default=paths.MEDABSTAIN_DIR)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--gpu-hourly-usd", type=float, default=wl.DEFAULT_GPU_HOURLY_USD)
     args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("--batch-size must be positive")
     if args.limit < 1:
         parser.error("--limit must be positive")
-    module, name = args.prompt_function.split(":", 1)
-    prompt_fn = getattr(importlib.import_module(module), name)
-    examples = read_examples(args.data)[:args.limit]
-    if not examples or any(x.get("answer") not in x["options"] for x in examples):
-        raise ValueError("Validation examples require valid answer letters")
-    six = next((x for x in read_examples(args.six_option_data) if len(x["options"]) == 6), None)
-    if six is None:
-        raise ValueError("Provide at least one real six-option MedAbstain question")
     if not torch.cuda.is_available():
-        raise RuntimeError("Run VM validation on CUDA")
+        raise RuntimeError("Run model validation on CUDA")
+    examples = load_splits("medmcqa", data_dir=args.data_dir)["hp_dev"][:args.limit]
+    six = next(x for x in load_medabstain("A", data_dir=args.medabstain_dir)
+               if len(x["options"]) == 6)
+    if not examples:
+        raise ValueError("The hp_dev split is empty")
     for device in range(torch.cuda.device_count()):
         torch.cuda.reset_peak_memory_stats(device)
-    wrapper = QwenWrapper(args.model_path, prompt_fn=prompt_fn)
-    results = wrapper.score_batch(examples, args.batch_size)
-    six_result = wrapper.score(six)
-    for result in results + [six_result]:
-        if abs(sum(result["probabilities"].values()) - 1) > 1e-5:
-            raise AssertionError("Probabilities do not sum to one")
-    accuracy = sum(r["prediction"] == x["answer"] for r, x in zip(results, examples)) / len(examples)
-    memory = []
-    for device in range(torch.cuda.device_count()):
-        torch.cuda.synchronize(device)
-        memory.append({"device": torch.cuda.get_device_name(device),
-                       "peak_allocated_gib": torch.cuda.max_memory_allocated(device)/2**30,
-                       "peak_reserved_gib": torch.cuda.max_memory_reserved(device)/2**30})
-    print(json.dumps({"n": len(examples), "accuracy": accuracy, "memory": memory,
-                      "six_option_result": six_result}, indent=2))
-    if accuracy <= .25:
-        raise AssertionError("Accuracy is not above the 25% random baseline")
-
-
-def read_examples(path):
-    with open(path, encoding="utf-8") as file:
-        return [json.loads(line) for line in file if line.strip()]
+    with wl.start_run("qwen-wrapper-smoke", vars(args) | {
+        "data_dir": str(args.data_dir), "medabstain_dir": str(args.medabstain_dir)
+    }, job_type="eval", gpu_hourly_usd=args.gpu_hourly_usd):
+        wrapper = QwenWrapper(args.model_path)
+        results = wrapper.score_batch(examples, batch_size=args.batch_size)
+        for result in results:
+            probs = result["probabilities"]
+            if abs(sum(probs.values()) - 1) > 1e-5:
+                raise AssertionError("Probabilities do not sum to one")
+        metrics = {"accuracy": sum(r["prediction"] == ex["answer"]
+                                  for r, ex in zip(results, examples)) / len(examples),
+                   "n": len(examples)}
+        single = wrapper.score(examples[0])
+        batched = wrapper.score_batch([examples[0], six], batch_size=2)
+        for letter, p in single["probabilities"].items():
+            if abs(p-batched[0]["probabilities"][letter]) > 1e-3:
+                raise AssertionError("Single/batch probabilities differ by more than 1e-3")
+        six_probs = batched[1]["probabilities"]
+        if set(six_probs) != set(six["options"]) or abs(sum(six_probs.values())-1) > 1e-5:
+            raise AssertionError("Invalid six-option scoring")
+        memory = []
+        for device in range(torch.cuda.device_count()):
+            torch.cuda.synchronize(device)
+            memory.append({"gpu": torch.cuda.get_device_name(device),
+                           "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,
+                           "peak_reserved_gib": torch.cuda.max_memory_reserved(device) / 2**30})
+        print(json.dumps({"memory": memory}, indent=2))
+        wl.log_eval(metrics)
+        print(json.dumps({"metrics": metrics, "six_option_result": batched[1]}, indent=2))
+        if metrics["accuracy"] <= .25:
+            raise AssertionError("Investigate scoring: accuracy is not above chance")
 
 
 if __name__ == "__main__":

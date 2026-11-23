@@ -13,8 +13,8 @@ def test_real_tokenizer_letter_boundaries():
         pytest.skip("Set QWEN_TOKENIZER_PATH to run the real tokenizer check")
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True)
-    w = QwenWrapper(model=Model(), tokenizer=tokenizer, prompt_fn=lambda x: [
-        {"role": "user", "content": x["question"] + "\nAnswer with only the letter."}])
+    from src.data.medqa_datasets import build_messages
+    w = QwenWrapper(model=Model(), tokenizer=tokenizer, prompt_fn=build_messages)
     prompt, letters, ids = w._prepare(example(6))
     assert len(set(ids)) == 6
     for letter in letters:
