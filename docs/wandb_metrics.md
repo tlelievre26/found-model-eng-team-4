@@ -23,8 +23,7 @@ step). Each value is an average over the steps since the previous log point, unl
 | `p_correct` | Mean probability of the correct letter | Softmax over the **full vocabulary** at the answer position, the gold letter's probability, averaged | Rises with training. It is `exp(-loss)`-like but averaged in probability space |
 | `letter_mass` | Probability mass on the option letters | Sum of full-vocabulary probabilities of the question's option letters (A–D for MedMCQA), averaged | Should stay close to 1 (the base model already answers with a letter). **A falling letter mass means the model is drifting off answering with a letter**, which the letter-only scores used for evaluation would hide |
 | `pred_frac_A` … `pred_frac_D` | How often each letter is predicted | Share of questions in the interval whose argmax option is that letter | Roughly matches the gold-letter distribution. One letter taking over means a positional bias or collapse |
-| `pad_frac` | Padding in each forward pass | `1 − real tokens / (rows × padded length)`, averaged over forward passes | About 0.01 with length grouping. A large value means length grouping isn't working |
-| `forwards_per_step` | Forward/backward passes per optimizer step | Forward passes ÷ steps in the interval | 2 when no micro-batch was split (2 micro-batches per step). Higher values mean wide micro-batches were split by `max_tokens_per_forward` to bound memory |
+| `pad_frac` | Padding in each micro-batch | `1 − real tokens / (batch × padded length)`, averaged over micro-batches | About 0.01 with length grouping. A large value means length grouping isn't working |
 | `epoch` | Epochs completed (float) | `tokens_seen / tokens in one full epoch` | The sweep trials end at 0.25 |
 | `resume_count` | Times this run was resumed | Counter stored in the resume state | 0 for an uninterrupted run. Training points shortly before a resume may appear twice |
 
