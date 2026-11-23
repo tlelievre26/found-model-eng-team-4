@@ -59,6 +59,10 @@ in all four variants. A/AP abstention rate is a separate metric. Accordingly,
 Original examples have `is_answerable=True`; perturbed examples have `None`
 because individual answerability is not annotated.
 
+Note: a few perturbed questions are identical to the original (NAP ids 230, 236, 544, 613,
+998; AP ids 450, 544, 613, 998), so abstaining is not the expected behaviour for them. NAP
+and AP were perturbed separately (375 questions have different text), so compare them with care.
+
 ## Tests
 
 ```bash
@@ -71,7 +75,8 @@ uses `load_splits("medqa")` (skipped if the MedQA splits are not built) and is m
 `xfail` until the overlap below is resolved.
 
 ```bash
-python -m scripts.verify_medabstain            # add --skip-medqa-overlap to check the files only
+python -m scripts.verify_medabstain            # checksums vs provenance.json, counts, MedQA overlap
+python -m scripts.verify_medabstain --skip-medqa-overlap   # files only
 ```
 
 The overlap check compares against the MedQA `train` and `val` splits from
