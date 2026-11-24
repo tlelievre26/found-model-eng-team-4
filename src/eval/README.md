@@ -13,7 +13,7 @@ threshold selection. The standalone command logs through the shared W&B helper.
 | `src/eval/metrics.py` | Pure `compute_metrics(probabilities, answers, n_bins=15)` function for variable-option predictions. |
 | `src/eval/evaluate.py` | `evaluate(model, examples, batch_size=16, ...)`: batch scoring, metric aggregation and optional JSONL/metadata output. |
 | `src/eval/__init__.py` | Exports `evaluate` and `compute_metrics`. |
-| `scripts/evaluate.py` | Select dataset, split, base model or adapter, and output; start/finish a standalone W&B evaluation run. |
+| `scripts/evaluate.py` | Select dataset, split, base model or adapter, and output; start/finish a standalone W&B evaluation run that records the checkpoint's training compute. |
 | `src/utils/paths.py` | Adds `EVAL_DIR` under the configurable shared root. |
 | `tests/test_eval.py` | Hand-worked metrics, ECE edges, output/reload checks, malformed output handling, and real shared-loader/W&B integration with synthetic examples. |
 
@@ -84,6 +84,19 @@ python scripts/evaluate.py --dataset medmcqa --split test
 python scripts/evaluate.py --dataset medqa --split test
 python scripts/evaluate.py --dataset medmcqa --split hp_dev --adapter /path/to/checkpoint
 ```
+
+With `--adapter`, the folder must be a checkpoint saved by training: the CLI reads its
+`metadata.json` (and stops if it is missing) so each evaluation can be plotted against
+the compute behind it. The W&B config and the `.meta.json` sidecar get a `checkpoint`
+entry with the step, epoch, `tokens_seen`, examples seen, GPU and train hours, training
+GPU, `final`, the training run's name, W&B id and git commit, prompt version, dedupe
+scheme, LoRA rank and learning rate. Metrics are logged at the checkpoint's step and
+`tokens_seen` (so `eval_vs_tokens/*` lines up with training), and its GPU-hours go in
+the run summary as `checkpoint/gpu_hours`. The base model logs step 0, 0 tokens and 0
+GPU-hours, the zero-compute point. The CLI refuses a checkpoint whose prompt version
+differs from the current `PROMPT_VERSION`, or whose model revision differs from the
+model at `--model-path` (checked when both are known). Adapter runs are named
+`<dataset>-<split>-<run_name>-step<NNNNNN>-<time>`.
 
 Use `--limit 10` for a smoke test; omit it for reported baselines. Offline logging
 is supported with `WANDB_MODE=offline`; tests use `WANDB_MODE=disabled`.

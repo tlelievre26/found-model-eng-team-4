@@ -20,6 +20,32 @@ def model_revision(model_path):
     return meta.read_text().split()[0] if meta.is_file() else None
 
 
+CHECKPOINT_FIELDS = ("step", "epoch", "tokens_seen", "examples_seen", "gpu_hours", "train_hours",
+                     "gpu_name", "final", "wandb_run_id", "git_commit", "prompt_version",
+                     "dedupe_scheme")
+TRAIN_CONFIG_FIELDS = ("run_name", "lora_rank", "learning_rate")
+
+
+def checkpoint_info(adapter, revision):
+    """Compute and identity fields from the metadata.json that training saves with each checkpoint."""
+    path = Path(adapter) / "metadata.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} not found; --adapter must be a checkpoint folder saved by training")
+    meta = json.loads(path.read_text())
+    train_config = meta.get("config", {})
+    missing = ([k for k in (*CHECKPOINT_FIELDS, "model_revision") if k not in meta]
+               + [f"config.{k}" for k in TRAIN_CONFIG_FIELDS if k not in train_config])
+    if missing:
+        raise ValueError(f"{path} is missing {missing}")
+    if revision and meta["model_revision"] and meta["model_revision"] != revision:
+        raise ValueError(f"Checkpoint was trained on model revision {meta['model_revision']}, "
+                         f"but the model at --model-path is revision {revision}")
+    if meta["prompt_version"] != PROMPT_VERSION:
+        raise ValueError(f"Checkpoint was trained with prompt version {meta['prompt_version']}, "
+                         f"but the current prompt version is {PROMPT_VERSION}")
+    return {**{k: meta[k] for k in CHECKPOINT_FIELDS}, **{k: train_config[k] for k in TRAIN_CONFIG_FIELDS}}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=["medmcqa", "medqa"], default="medmcqa")
@@ -44,23 +70,29 @@ def main():
     examples = splits[args.split]
     if args.limit is not None:
         examples = examples[:args.limit]
+    revision = model_revision(args.model_path)
+    checkpoint = checkpoint_info(args.adapter, revision) if args.adapter else None
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    name = f"{args.dataset}-{args.split}-{'adapter' if args.adapter else 'base'}-{stamp}"
+    model_tag = f"{checkpoint['run_name']}-step{checkpoint['step']:06d}" if checkpoint else "base"
+    name = f"{args.dataset}-{args.split}-{model_tag}-{stamp}"
     output = args.output or paths.EVAL_DIR / (name + ".jsonl")
     split_file = args.data_dir / "splits" / f"{args.dataset}.json"
     stats_file = args.data_dir / "splits" / "stats.json"
     config = {"dataset": args.dataset, "split": args.split, "model_id": MODEL_ID,
-              "model_path": str(args.model_path), "model_revision": model_revision(args.model_path),
-              "adapter_path": args.adapter,
+              "model_path": str(args.model_path), "model_revision": revision,
+              "adapter_path": args.adapter, "checkpoint": checkpoint,
               "prompt_version": PROMPT_VERSION, "batch_size": args.batch_size,
               "n_bins": args.n_bins, "limit": args.limit, "output": str(output),
               "split_ids_sha256": hashlib.sha256(split_file.read_bytes()).hexdigest(),
               "stats_sha256": hashlib.sha256(stats_file.read_bytes()).hexdigest()}
-    with wl.start_run(name, config, job_type="eval", gpu_hourly_usd=args.gpu_hourly_usd):
+    with wl.start_run(name, config, job_type="eval", gpu_hourly_usd=args.gpu_hourly_usd) as logger:
         wrapper = QwenWrapper(model_path=args.model_path, adapter_path=args.adapter)
         metrics = evaluate(wrapper, examples, args.batch_size, n_bins=args.n_bins,
                            output_path=output, metadata=config)
-        wl.log_eval(metrics)
+        # The base model is the zero-compute point; a checkpoint logs the compute it was trained with.
+        compute = checkpoint or {"step": 0, "tokens_seen": 0, "gpu_hours": 0.0}
+        wl.log_eval(metrics, step=compute["step"], tokens_seen=compute["tokens_seen"])
+        logger.run.summary["checkpoint/gpu_hours"] = compute["gpu_hours"]
         print(json.dumps(metrics))
 
 
