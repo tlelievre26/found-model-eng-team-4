@@ -30,7 +30,7 @@ import torch.nn.functional as F
 
 from src.data.medqa_datasets import PROMPT_VERSION, build_messages
 from src.data.medqa_datasets.data import DEDUPE_SCHEME
-from src.eval.stub import evaluate  # STUB until #12's harness lands: swap this import
+from src.eval import evaluate
 from src.models.qwen import DEFAULT_MODEL_PATH, QwenWrapper, load_base_model
 from src.training import data as td
 from src.utils import paths
@@ -172,13 +172,12 @@ def _write_json(path: Path, obj) -> None:
 
 
 def run_eval(model, tokenizer, examples: list[dict], batch_size: int) -> dict:
-    """Evaluate the in-memory model through the wrapper (no reload), then switch back to train mode."""
-    model.eval()
-    try:
-        wrapper = QwenWrapper(prompt_fn=build_messages, model=model, tokenizer=tokenizer)
-        return evaluate(wrapper, examples, batch_size=batch_size)
-    finally:
-        model.train()
+    """Evaluate the in-memory model through the wrapper (no reload).
+
+    The wrapper switches the model to eval mode for scoring and restores train mode afterwards.
+    """
+    wrapper = QwenWrapper(prompt_fn=build_messages, model=model, tokenizer=tokenizer)
+    return evaluate(wrapper, examples, batch_size=batch_size)
 
 
 def train(cfg: dict, *, model=None, tokenizer=None, train_examples=None, eval_examples=None,

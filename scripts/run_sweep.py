@@ -24,7 +24,7 @@ import torch  # noqa: E402
 import yaml  # noqa: E402
 
 from src.data.medqa_datasets import build_messages  # noqa: E402
-from src.eval.stub import evaluate  # noqa: E402  STUB until #12's harness lands
+from src.eval import evaluate  # noqa: E402
 from src.models.qwen import DEFAULT_MODEL_PATH, QwenWrapper  # noqa: E402
 from src.training import data as td  # noqa: E402
 from src.training.config import apply_overrides, load_config  # noqa: E402
