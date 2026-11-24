@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from copy import deepcopy
@@ -142,6 +143,24 @@ def load_medabstain(variant: str, split: str = "test", data_dir=None) -> list[di
         except ValueError as exc:
             raise ValueError(f"{path}: record {index}: {exc}") from exc
     return result
+
+
+def check_checksums(data_dir=None) -> dict:
+    """Compare every file listed in provenance.json with its recorded SHA-256.
+
+    Also requires every file in FILES to be listed, so no loaded file goes unchecked."""
+    directory = Path(data_dir).expanduser() if data_dir is not None else paths.MEDABSTAIN_DIR
+    manifest = json.loads((directory / "provenance.json").read_text())
+    if manifest["commit"] != UPSTREAM_COMMIT:
+        raise ValueError(f"Data is from upstream commit {manifest['commit']}, expected {UPSTREAM_COMMIT}")
+    unlisted = sorted({name for files in FILES.values() for name in files.values()} - manifest["sha256"].keys())
+    if unlisted:
+        raise ValueError(f"provenance.json in {directory} does not list {unlisted}")
+    bad = [name for name, digest in manifest["sha256"].items()
+           if hashlib.sha256((directory / name).read_bytes()).hexdigest() != digest]
+    if bad:
+        raise ValueError(f"Checksum mismatch in {directory}: {bad}")
+    return {"files": len(manifest["sha256"]), "commit": manifest["commit"]}
 
 
 def normalize_question(text: str) -> str:

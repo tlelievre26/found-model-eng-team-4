@@ -102,6 +102,22 @@ source ~/.bashrc
 
 Get your keys from https://wandb.ai/authorize and https://huggingface.co/settings/tokens.
 
+## Building the datasets
+
+[`scripts/build_all_datasets.py`](scripts/build_all_datasets.py) builds every dataset in one go: it downloads MedAbstain, builds the MedMCQA and MedQA splits (excluding the MedAbstain test questions), validates the result and records it in `/shared/data/manifest.json` (git commit, library versions, dataset revisions, settings, file checksums, split sizes).
+
+- **It is run once, on the team VM, from a clean `main`, into `/shared/data`.** Everyone else uses that build. **Don't run it yourself**: one build means everyone works with the same splits.
+  ```bash
+  python -m scripts.build_all_datasets
+  ```
+- **Other machines** (e.g. Insomnia) copy `/shared/data` into `$FME_SHARED_DIR/data` and check the copy against the manifest. A non-zero exit means the copy differs:
+  ```bash
+  FME_SHARED_DIR=/path/to/shared python -m scripts.build_all_datasets --verify-only
+  ```
+- **Rebuild only when a build setting changes** (the settings block in `src/data/medqa_datasets/data.py`, or the pinned dataset revisions), and **never once tuning has started**: a rebuild can change which questions are in each split. The script refuses to overwrite an existing build unless `--force` is given.
+
+Details are in [`src/data/medqa_datasets/README.md`](src/data/medqa_datasets/README.md).
+
 ## Logging runs to W&B
 
 Every training and eval run should log to the shared W&B project through [`src/utils/wandb_logging.py`](src/utils/wandb_logging.py). It records the full config, git commit, GPU type, wall-clock time, peak GPU memory, and estimated cost (hours × $0.71/hr for the L4 VM).

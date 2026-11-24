@@ -3,7 +3,7 @@
 One function returns fixed, leak-free splits for MedMCQA and MedQA in a common format, plus the single prompt format used by the model wrapper and training code.
 
 ```python
-from src.data.medqa_datasets import load_splits, build_messages   # build the data once first (see Running it)
+from src.data.medqa_datasets import load_splits, build_messages   # needs the shared build (see Running it)
 
 medmcqa = load_splits("medmcqa")   # {"train", "hp_dev", "calib", "thresh", "test"}
 medqa = load_splits("medqa")       # {"train", "val", "test"}
@@ -27,22 +27,22 @@ Example format (any number of options is supported):
 
 | Dataset | Split | Rows | Use |
 |---|---|---|---|
-| MedMCQA | `train` | 158145 | Fine-tuning |
+| MedMCQA | `train` | 158146 | Fine-tuning |
 | MedMCQA | `hp_dev` | 2000 | Choose learning rate and LoRA rank |
 | MedMCQA | `calib` | 1500 | Fit the temperature T of each checkpoint |
 | MedMCQA | `thresh` | 2500 | Choose the abstention threshold of each checkpoint |
 | MedMCQA | `test` | 4168 | Final reported numbers only (the official MedMCQA validation set) |
-| MedQA | `train` | 9178 | Fine-tuning |
+| MedQA | `train` | 8171 | Fine-tuning |
 | MedQA | `val` | 1000 | Validation |
-| MedQA | `test` | 1273 | Final numbers; source of MedAbstain (#4), never trimmed |
+| MedQA | `test` | 1273 | Final numbers (cross-dataset transfer); the complete official test set |
 
-`hp_dev`, `calib`, `thresh` and `test` share no question with each other or with any train set, so tuning, temperature fitting and threshold selection never see the same questions and never touch `test`. MedMCQA has no `val` key any more.
+`hp_dev`, `calib`, `thresh` and `test` share no question with each other or with any train set, so tuning, temperature fitting and threshold selection never see the same questions and never touch `test`. MedMCQA has no `val` key any more. No split of either dataset contains a MedAbstain test question (see Deduplication), so MedAbstain stays an independent benchmark even for a model trained on MedQA.
 
 ## Folder structure
 
 ### What is in the repository
 
-The code is in this folder and the tests are in the repo's `tests/` folder. **No dataset files are committed: everyone builds their own copy** (see Running it), and the checksums below prove that the copies are identical.
+The code is in this folder and the tests are in the repo's `tests/` folder. **No dataset files are committed.** The data is built once on the team VM with `scripts/build_all_datasets.py`; other machines copy that build and check it with `--verify-only` (see Running it). The checksums below prove that the copies are identical.
 
 ```
 src/data/medqa_datasets/
@@ -54,19 +54,21 @@ src/data/medqa_datasets/
                                       prints the README numbers
 tests/
 ├── test_data.py                      real_data (--run-real-data): leakage, no shared questions, similarity filter,
-│                                     determinism in fresh processes, format, config guard
+│                                     no MedAbstain test question, determinism in fresh processes, format, config guard
 ├── test_subsets.py                   Offline: subset carving, similarity filter, guard on subsets
 ├── test_dedupe_logic.py              Offline: key functions, the two-tier dedupe and conflict dropping on tiny examples,
-│                                     load_splits refusing to build
+│                                     load_splits refusing to build, MedAbstain exclusion in an offline build
 └── test_prompts.py                   Offline: prompt text for 4 and 6 options, message structure
 ```
 
 ### Where the data lives (not part of the submission)
 
-Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). All of these paths come from `src/utils/paths.py` (`DATA_DIR`, `SPLITS_DIR`, `PROCESSED_DIR`, `HF_CACHE_DIR`, `CACHE_DIR`); set the `FME_SHARED_DIR` environment variable to use another root, for example on Insomnia. `build_all(out_dir=...)` and `load_splits(..., data_dir=...)` accept another folder with the same `splits/` and `processed/` layout. The data files are not committed to git; each person produces them with `build_all()` (or by running the notebook).
+Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/shared/data` by default; the Colab run used Google Drive `MyDrive/shared/data`). All of these paths come from `src/utils/paths.py` (`DATA_DIR`, `SPLITS_DIR`, `PROCESSED_DIR`, `HF_CACHE_DIR`, `CACHE_DIR`); set the `FME_SHARED_DIR` environment variable to use another root, for example on Insomnia. `build_all(out_dir=...)` and `load_splits(..., data_dir=...)` accept another folder with the same `splits/` and `processed/` layout. The data files are not committed to git; they are produced once by `scripts/build_all_datasets.py` (see Running it).
 
 ```
 <DATA_DIR>/
+├── manifest.json           Written by scripts/build_all_datasets.py: git commit, versions, settings, checksums, sizes
+├── medabstain/             MedAbstain files and provenance.json (CC-BY-NC 4.0: never commit or re-upload)
 ├── splits/
 │   ├── medmcqa.json        Question ids of train / hp_dev / calib / thresh / test (the source of truth)
 │   ├── medqa.json          Same for MedQA (train / val / test)
@@ -78,32 +80,34 @@ Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/
 └── cache/                  Similarity-search results (speed-up only, safe to delete)
 ```
 
-`load_splits` reads the id lists in `splits/` and looks the records up in `processed/`. It never builds them: if they are missing it raises `FileNotFoundError` with the build command (see Running it).
+`load_splits` reads the id lists in `splits/` and looks the records up in `processed/`. It never builds them: if they are missing it raises `FileNotFoundError` (see Running it).
 
 ### What is in `data.py`
 
 | Name | Role |
 |---|---|
-| Settings block (`SEED`, `SPLIT_SIZES`, `SIMILARITY_FILTER`, `SHORT_STEM_WORDS`, `DEDUPE_SCHEME`, `HF_REPOS`, `HF_REVISIONS`, `SPLIT_PRIORITY`, `DATASET_ORDER`) | Everything that shapes the splits, in one place |
-| `current_config()` | Snapshot of those settings, saved in `stats.json` and checked by `load_splits` |
+| Settings block (`SEED`, `SPLIT_SIZES`, `SIMILARITY_FILTER`, `SHORT_STEM_WORDS`, `DEDUPE_SCHEME`, `HF_REPOS`, `HF_REVISIONS`, `SPLIT_PRIORITY`, `DATASET_ORDER`, `MEDABSTAIN_PROTECTED`) | Everything that shapes the splits, in one place |
+| `current_config()` | Snapshot of those settings plus the MedAbstain upstream commit and protected file, saved in `stats.json` and checked by `load_splits` |
 | `normalize()` | Lowercase, punctuation to spaces, collapse whitespace |
 | `exact_key()`, `leak_key()` | Two definitions of "the same question" (see below) |
 | `load_medmcqa_raw()`, `load_medqa_raw()` | Download (pinned commit) and convert to the common format |
 | `dedupe_within()` | Remove repeats inside one list, keeping the first (optionally dropping every copy of a question whose copies disagree on the answer) |
+| `exclude_protected()`, `medabstain_protected_questions()` | Remove rows whose question is a MedAbstain test question; load those questions after checking the files against `provenance.json` |
 | `split_names()` | Split names of a dataset, in the order used everywhere |
 | `near_duplicate_ids()` | Ids of rows with a near-copy (Levenshtein similarity at or above the threshold) in a reference set |
 | `carve_subsets()` | Deterministic, disjoint named subsets from train, optionally skipping near-copy rows |
 | `global_dedupe()` | Cross-split and cross-dataset removal with priority test > val > hp_dev > calib > thresh > train |
-| `build_all()` | Runs the whole pipeline and writes `splits/`, `processed/`, `stats.json` |
+| `build_all()` | Runs the whole pipeline and writes `splits/`, `processed/`, `stats.json` (fails without the verified MedAbstain files) |
 | `load_splits()` | The entry point |
 
 ## How the splits are built
 
 - **Sources (pinned):** MedMCQA `openlifescienceai/medmcqa` at commit `91c6572c454088bf71b679ad90aa8dffcd0d5868`; MedQA (English, 4 options) `GBaker/MedQA-USMLE-4-options` at commit `0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18`.
 - **MedMCQA:** the official test set has no answers, so the official **validation** set is our `test`. `hp_dev` (2000), `calib` (1500) and `thresh` (2500) are carved from the deduplicated train set, as consecutive blocks of one seeded shuffle, so they cannot overlap.
-- **MedQA:** Hugging Face has only train and test. `val` (1000 rows) is carved out of train. The official test set is untouched (all 1273 rows), so MedAbstain (#4), which is built from MedQA test questions, cannot overlap MedQA train or val.
+- **MedQA:** Hugging Face has only train and test. `val` (1000 rows) is carved out of train, after the MedAbstain test questions are removed from it (see Deduplication). The official test set is untouched (all 1273 rows); none of its questions is in MedAbstain.
 - **Seed 42.** Rows are sorted by id before shuffling, so the result does not depend on load order.
 - **Deduplication.** Questions are compared after lowercasing, replacing punctuation with spaces and collapsing whitespace. When a question appears in more than one place, one copy is kept with priority test > val > hp_dev > calib > thresh > train (MedQA before MedMCQA on ties).
+  - **MedAbstain test questions are excluded first, from everything.** All 1007 MedAbstain test questions (#4) come from MedQA **train** (`GBaker/MedQA-USMLE-4-options`), none from its test set. Right after the within-dataset deduplication and before any subset is carved, every row of either dataset's train or test pool whose normalized question equals a MedAbstain test question (from the NA test file, `medqa_1_test_noabst.json`) is removed. Options are ignored (MedAbstain has 5 options, MedQA 4), so `leak_key` is not used here. Because this happens before carving, MedQA `val` keeps its 1000 rows and no split ever keeps a copy over a MedAbstain question. Only the test questions are protected: the MedAbstain `val_100` and few-shot files still overlap MedQA train/val by design. `build_all()` refuses to run unless the MedAbstain files exist and match their `provenance.json`. `stats.json` records the counts (`<dataset>/<split>/medabstain` in `removed`) and the ids of our removed rows (`medabstain_excluded_ids`), never MedAbstain text.
   - Inside train, and between the two train sets: only true copies are removed (`exact_key`: same question and same options, option order ignored).
   - Inside each train set, if the true copies of a question disagree on the answer text (label noise), **all** copies are dropped instead of keeping the first. `stats.json` counts the extra rows dropped this way (one per such question; the other copies are already in `within`) as `<dataset>/train/conflict_dropped`. Deduplication of `test` (`leak_key`) still keeps the first copy.
   - Eval splits, and train versus eval splits: strict matching (`leak_key`): stems of 10 or more words match on the question alone, shorter stems must also have the same options. No eval question appears in any train set or in another eval split.
@@ -119,7 +123,7 @@ Data files are kept outside the code, in `DATA_DIR` = `$FME_SHARED_DIR/data` (`/
 | 0.7 | 32.9% | 31.5% | 35.6% | 21.8% | 51.5% |
 | median nearest similarity | 0.62 | 0.62 | 0.63 | 0.56 | 0.71 |
 
-Recomputed for the current build with the notebook's two analysis cells. The subset and `test` columns compare with the final train set; the last column comes from the pre-build cell, which samples train deduplicated with `exact_key` but without the conflict rule.
+Recomputed for the current build (`two-tier-v3`; identical to the `two-tier-v2` values) with the notebook's two analysis cells. The subset and `test` columns compare with the final train set; the last column comes from the pre-build cell, which samples train deduplicated with `exact_key` but without the conflict rule.
 
 The filter removes the near-copy excess at 0.8 and above (9.5% to 11.8% for the subsets vs 8.1% for `test`, where unfiltered train would be 34.6%). A smaller difference remains below the threshold (0.7 and the median), because `test` comes from different exams than train; this is a property of the source data, not something the filter can remove. Calibration and threshold choices should still be re-checked against `test` behaviour when final numbers are reported.
 
@@ -127,56 +131,68 @@ The filter removes the near-copy excess at 0.8 and above (9.5% to 11.8% for the 
 
 | Dataset | Raw train | Raw test | Final train | `val` | `hp_dev` | `calib` | `thresh` | Final test |
 |---|---|---|---|---|---|---|---|---|
-| MedMCQA | 182822 | 4183 (HF validation) | 158145 | none | 2000 | 1500 | 2500 | 4168 |
-| MedQA | 10178 | 1273 | 9178 | 1000 | none | none | none | 1273 |
+| MedMCQA | 182822 | 4183 (HF validation) | 158146 | none | 2000 | 1500 | 2500 | 4168 |
+| MedQA | 10178 | 1273 | 8171 | 1000 | none | none | none | 1273 |
 
 In this build no subset row matched another eval question, so the subsets have exactly their nominal sizes (2000 / 1500 / 2500). In general the leak guard can drop a few subset rows, which leaves a subset slightly below its nominal size.
 
-| Dataset | Train copies removed | Train rows dropped for conflicting answers | Test copies removed | Train rows matching an eval question | Subset rows matching another eval question | True copies across the two train sets |
-|---|---|---|---|---|---|---|
-| MedMCQA | 18106 | 379 | 15 | 192 | 0 (`hp_dev`), 0 (`calib`), 0 (`thresh`), 0 (`test`) | 0 |
-| MedQA | 0 | 0 | 0 | 0 | 0 | 0 |
+| Dataset | Train copies removed | Train rows dropped for conflicting answers | Test copies removed | MedAbstain test questions removed (train / test) | Train rows matching an eval question | Subset rows matching another eval question | True copies across the two train sets |
+|---|---|---|---|---|---|---|---|
+| MedMCQA | 18106 | 379 | 15 | 0 / 0 | 191 | 0 (`hp_dev`), 0 (`calib`), 0 (`thresh`), 0 (`test`) | 0 |
+| MedQA | 0 | 0 | 0 | 1007 / 0 | 0 | 0 (`val`), 0 (`test`) | 0 |
 
 Similarity filter on MedMCQA: 12000 shuffled candidates examined, 3471 flagged, subsets filled from the rest.
 
-Total removed: 18692 (all MedMCQA). Removed copies whose correct answer text differed from the first copy (label noise in the source): MedMCQA train 400, in 379 questions, all of whose copies are dropped (the 379 in the table are the first copies, which plain deduplication would have kept); MedMCQA test 2 (the first copy is kept, as before).
+All 1007 MedAbstain test questions match exactly one MedQA train row each and are removed before `val` is carved, so MedQA train shrinks from 9178 to 8171 while `val` keeps 1000 rows; the re-carved `val` is a different set of questions than before. No MedMCQA row matches a MedAbstain test question. MedMCQA's subsets and `test` are unchanged, but its train gains one row (191 instead of 192 rows matching an eval question): it shares a stem (different options) with a MedQA question that was in the old MedQA `val` and is now in MedQA train, where only true copies are removed.
+
+Total removed: 19698 (MedMCQA 18691, MedQA 1007). Removed copies whose correct answer text differed from the first copy (label noise in the source): MedMCQA train 400, in 379 questions, all of whose copies are dropped (the 379 in the table are the first copies, which plain deduplication would have kept); MedMCQA test 2 (the first copy is kept, as before).
 
 ## Running it
 
-1. **Build the data once, explicitly**, before anything calls `load_splits` (it does not build on its own). From the repo root:
+1. **Use the shared build; don't build your own.** The data is built once, on the team VM, from a clean `main`, into `/shared/data` (see "Building the datasets" in the root README):
 
    ```bash
-   python -c "from src.data.medqa_datasets import build_all; build_all()"
+   python -m scripts.build_all_datasets
    ```
 
-   Output goes to `$FME_SHARED_DIR/data` (`/shared/data` by default, on the team VM); on other machines such as Insomnia, set `FME_SHARED_DIR` first. Then check `sha256sum $FME_SHARED_DIR/data/splits/*.json` against the checksums in Reproducibility. The team VM's `/shared/data` can be built this way, or get a copy of `splits/` and `processed/` from a verified build.
-2. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `FME_SHARED_DIR` (a Google Drive path; edit that one line for your own Drive or folder). Running the notebook is all that is needed to obtain the dataset: it downloads both datasets at the pinned commits and builds the splits. The test cell is optional for just obtaining the data.
-3. Check your copy: run the checksum cell and compare with the reference checksums in the Reproducibility section.
-4. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q`. Plain `pytest` runs only the offline tests: the tests in `tests/test_data.py` are marked `real_data` and skipped by default, because they need the built data (step 1) and network access and take minutes. To run them too, add `--run-real-data` (about 8 minutes on Colab because two fresh builds recompute the similarity search).
+   It downloads MedAbstain into `$FME_SHARED_DIR/data/medabstain` (`build_all()` excludes its test questions and refuses to run without them), builds the splits, validates them (MedAbstain checksums, config guard, no question shared between splits, no MedAbstain test question in any split, sane sizes) and writes `manifest.json`. It refuses to overwrite an existing build unless `--force` is given; rebuild only when a setting changes and never once tuning has started.
+2. **Other machines** (e.g. Insomnia): copy `/shared/data` into `$FME_SHARED_DIR/data`, then check the copy. Any difference from the manifest exits non-zero:
+
+   ```bash
+   FME_SHARED_DIR=/path/to/shared python -m scripts.build_all_datasets --verify-only
+   ```
+3. On Colab: open `splits_build_and_analysis.ipynb` and run all cells in order. The setup cell clones the repo (set `BRANCH` to run another branch) and sets `FME_SHARED_DIR` (a Google Drive path; edit that one line for your own Drive or folder). The build cell runs `scripts/build_all_datasets.py` (or `--verify-only` if the folder already holds a build). The test cell is optional for just obtaining the data.
+4. Outside Colab: install the repo (`pip install -e ".[dev]"`), set `FME_SHARED_DIR` if the data is not under `/shared`, then from the repo root run `python -m pytest -q`. Plain `pytest` runs only the offline tests: the tests in `tests/test_data.py` are marked `real_data` and skipped by default, because they need the built data and the MedAbstain files (step 1 or 2) and network access and take minutes. To run them too, add `--run-real-data` (about 8 minutes on Colab because two fresh builds recompute the similarity search).
 
 ## Reproducibility
 
-The splits are a function of: the two pinned dataset commits, the settings block in `data.py`, `rapidfuzz` 3.14.6 and the code. With those unchanged, building again gives identical splits. `test_deterministic_in_fresh_processes` builds twice in separate Python processes with different `PYTHONHASHSEED` values and empty similarity caches (so the similarity search is genuinely recomputed) and compares the id files byte for byte with each other and with the saved splits.
+The splits are a function of: the two pinned dataset commits, the pinned MedAbstain commit (its test questions are excluded), the settings block in `data.py`, `rapidfuzz` 3.14.6 and the code. With those unchanged, building again gives identical splits. `test_deterministic_in_fresh_processes` builds twice in separate Python processes with different `PYTHONHASHSEED` values and empty similarity caches (so the similarity search is genuinely recomputed) and compares the id files byte for byte with each other and with the saved splits.
 
 - `load_splits` refuses to run if the settings saved in `splits/stats.json` differ from the code's settings. It does not detect edits to the function bodies (for example `normalize`). If you change how keys are built, bump `DEDUPE_SCHEME`.
 - `stats.json` records the Python, `datasets` and `rapidfuzz` versions of the build, so a mismatch can be traced.
-- To compare two runs or two machines, checksum the id files: `sha256sum <DATA_DIR>/splits/medmcqa.json <DATA_DIR>/splits/medqa.json` (or run the checksum cell). Equal checksums mean equal splits.
-- Reference checksums (SHA-256) of the id files from the current build (seed 42, the pinned commits above, `DEDUPE_SCHEME = "two-tier-v2"`, similarity threshold 0.85, Python 3.13.5, `datasets` 5.2.0, `rapidfuzz` 3.14.6):
+- `manifest.json` (written by `scripts/build_all_datasets.py`) records the git commit, branch and whether the tree was clean, the library versions, the dataset and MedAbstain revisions, `current_config()`, the SHA-256 of every file in `splits/` and `processed/`, the MedAbstain checksums from `provenance.json`, the split sizes and the removal counts. `--verify-only` recomputes all of them and reruns the validation, so a copied folder can confirm it is identical.
+- To compare two runs or two machines by hand, checksum the id files: `sha256sum <DATA_DIR>/splits/medmcqa.json <DATA_DIR>/splits/medqa.json` (or run the checksum cell). Equal checksums mean equal splits.
+- Reference checksums (SHA-256) from the current build (seed 42, the pinned commits above, MedAbstain commit `091e5c22111fffeb51c0c2e69b65d0a21a1e4164`, `DEDUPE_SCHEME = "two-tier-v3"`, similarity threshold 0.85, Python 3.13.5, `datasets` 5.2.0, `rapidfuzz` 3.14.6), as recorded in `manifest.json`:
 
   | File | SHA-256 |
   |---|---|
-  | `splits/medmcqa.json` | `71d5c9e6cd7c8b785b2555bf57575dc1226e88491e245dcb94fd7d52633db4df` |
-  | `splits/medqa.json` | `6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c` |
+  | `splits/medmcqa.json` | `37279a17f77af9c6ebfa732dc5c72b76797b5b279dd47167f9ba72def0e7ee50` |
+  | `splits/medqa.json` | `ef91dd8ceadf7f0e2c1a55554b7387231c597aa03c8e8f812dd6c2e346d381d3` |
+  | `splits/stats.json` | `35cca749e7ca1afd65655e161690342afec8c97783e9e904dfe6a0b4210cde6b` |
+  | `processed/medmcqa.jsonl` | `1a696ea5da38c9ae0fd0ab367e64d2ca54267eebd53833268b347ecf15e82c12` |
+  | `processed/medqa.jsonl` | `ad644a43e2caaea3427ceceeca2424d94fe2ec5064af2a2eb0939144a05c63b0` |
 
-  These supersede the checksums of the original v6 build (`DEDUPE_SCHEME = "two-tier-v1"`, Python 3.13.18, `datasets` 4.8.5): its `medmcqa.json` was `7bc0abd2202114ea25c13b3d11aafde2fc9c7469db261042eaa4e5c1764ebaad`; `medqa.json` is unchanged. Rebuilding the v6 code with Python 3.13.5 and `datasets` 5.2.0 reproduced both original checksums exactly, so the change in `medmcqa.json` comes only from dropping conflicting train copies.
+  `stats.json` also records the library versions, so its checksum matches only for a build with the same environment. These supersede the `two-tier-v2` build (`medmcqa.json` `71d5c9e6cd7c8b785b2555bf57575dc1226e88491e245dcb94fd7d52633db4df`, `medqa.json` `6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c`), which kept the MedAbstain test questions in MedQA train and `val`; `medmcqa.json` differs from it only by the one MedMCQA train row described in Results.
 
-  Every independent build with unchanged settings should print the same two values; this is how everyone confirms they have the identical dataset. If you change any setting, the values change and must be updated here.
+  The `two-tier-v2` checksums in turn superseded the original v6 build (`DEDUPE_SCHEME = "two-tier-v1"`, Python 3.13.18, `datasets` 4.8.5): its `medmcqa.json` was `7bc0abd2202114ea25c13b3d11aafde2fc9c7469db261042eaa4e5c1764ebaad`; `medqa.json` was unchanged. Rebuilding the v6 code with Python 3.13.5 and `datasets` 5.2.0 reproduced both original checksums exactly, so the change in `medmcqa.json` comes only from dropping conflicting train copies.
+
+  Every independent build with unchanged settings should give the same id-file values; this is how everyone confirms they have the identical dataset. If you change any setting, the values change and must be updated here.
 - Python's random module does not formally guarantee identical shuffles across Python versions, and `rapidfuzz` could in principle change a similarity at the filter boundary in another version. If two checksums differ, compare the `environment` entries in the two `stats.json` files first.
 
 ## Freeze
 
-Record the checksums above and do not rebuild once any tuning has started. A rebuild can change ids, which would invalidate every run that already used the old subsets. Earlier build versions (v3, v4, v5, and the original v6 build with `two-tier-v1`) produced different `medmcqa.json` files and must not be mixed with results on the current splits.
+Record the checksums above and do not rebuild once any tuning has started. A rebuild can change ids, which would invalidate every run that already used the old subsets. Earlier build versions (v3, v4, v5, the original v6 build with `two-tier-v1`, and `two-tier-v2`) produced different id files and must not be mixed with results on the current splits.
 
 ## Changing a setting
 
-Anything in the settings block changes the splits. After changing one: rerun the build, rerun the tests, update the checksums here, and share the new `splits/` folder. Do not edit the prompt wording without bumping `PROMPT_VERSION` in `prompts.py`.
+Anything in the settings block changes the splits. After changing one: rerun the build on the team VM (`python -m scripts.build_all_datasets --force`), rerun the tests, update the checksums here, and have everyone re-copy `/shared/data` and run `--verify-only`. Do not edit the prompt wording without bumping `PROMPT_VERSION` in `prompts.py`.

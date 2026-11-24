@@ -71,11 +71,11 @@ FME_SHARED_DIR=/path/to/shared python -m pytest -q -rs tests
 ```
 
 The real-data tests skip when the MedAbstain files are missing. The MedQA overlap test
-uses `load_splits("medqa")` (skipped if the MedQA splits are not built) and is marked
-`xfail` until the overlap below is resolved.
+uses `load_splits("medqa")` (skipped if the MedQA splits are not built) and checks that no
+MedAbstain test question is in MedQA train/val.
 
 ```bash
-python -m scripts.verify_medabstain            # checksums vs provenance.json, counts, MedQA overlap
+python -m scripts.verify_medabstain            # checksums vs provenance.json, counts, MedQA overlap (fails on test files only)
 python -m scripts.verify_medabstain --skip-medqa-overlap   # files only
 ```
 
@@ -83,17 +83,16 @@ The overlap check compares against the MedQA `train` and `val` splits from
 `src.data.medqa_datasets.load_splits`. Matching lowercases
 question text, replaces punctuation with spaces, and collapses whitespace.
 Both displayed and original questions are compared; choices are ignored.
-Generic short-question matches may need review. Existing splits are unchanged.
+Generic short-question matches may need review.
 
 ## Known overlap
 
-Against the reproduced Issue #3 splits, each MedAbstain test variant matches
-**903 MedQA train / 104 validation** records. Each available validation variant
-matches **88 train / 12 validation** records. Original test/NA questions match
-zero official MedQA test records. Counts repeat across variants.
-
-These counts are for the MedQA splits with SHA-256
-`6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c`, so the overlap check
-currently fails. MedAbstain questions are therefore not an independent evaluation set for
-a model trained on MedQA train/val. The planned unify-datasets PR will exclude MedAbstain
-test questions from MedQA train/val when the splits are built.
+All 1,007 MedAbstain test questions come from MedQA **train** (`GBaker/MedQA-USMLE-4-options`); none
+is in the official MedQA test set. The splits built before `DEDUPE_SCHEME = "two-tier-v3"` (MedQA SHA-256
+`6e755d5bbd8c5c256a86e701a0557e1cb8d81e984f6abf7f6d6f57c550ffbc2c`) put **903 of them in MedQA train and
+104 in validation**. Since `two-tier-v3`, `build_all()` removes every MedAbstain test question from all
+MedQA and MedMCQA splits before carving (see `src/data/medqa_datasets/README.md`), so the test files have
+zero overlap and MedAbstain stays independent of a model trained on MedQA. The `val_100` and few-shot files
+are not excluded and still overlap MedQA train/val: against the `two-tier-v3` splits (MedQA SHA-256
+`ef91dd8ceadf7f0e2c1a55554b7387231c597aa03c8e8f812dd6c2e346d381d3`), each test variant matches
+**0 train / 0 validation** records and each validation variant matches **90 train / 10 validation**.
