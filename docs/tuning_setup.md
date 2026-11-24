@@ -91,7 +91,8 @@ the 151,936-entry vocabulary from being materialized for every position.
   and `metadata.json`: step, epoch (float), `tokens_seen`, examples seen, GPU-hours, training-only hours,
   wall-clock hours since the run started, GPU name, W&B run id, the resolved config, git commit and dirty flag,
   the data manifest's SHA-256, the model revision, `PROMPT_VERSION` and `DEDUPE_SCHEME`.
-- Load one with `QwenWrapper(prompt_fn=build_messages, adapter_path=".../step-001236")`.
+- Evaluate one with `scripts/evaluate.py --adapter .../step-001236 --dataset medmcqa --split <split>`, or load it
+  in Python with `QwenWrapper(adapter_path=".../step-001236")`.
 - **GPU-hours** are the time the training process ran (model loading, training, evaluation and saving), summed
   over sessions, on one GPU. Time lost between the last resume state and a crash is not counted.
 

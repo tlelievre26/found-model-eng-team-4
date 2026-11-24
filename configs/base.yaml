@@ -40,7 +40,7 @@ max_grad_norm: 1.0
 checkpoints_per_epoch: 1       # kept (evaluated) checkpoints, evenly spaced in tokens; the end is always kept
 resume_every_minutes: 20.0     # rolling resume checkpoint, overwritten
 
-# --- evaluation (src/eval/stub.py until #12 lands)
+# --- evaluation (src/eval, the #12 harness)
 eval_split: null               # e.g. medmcqa:hp_dev; null = no evaluation
 eval_every_epochs: null        # evaluate every this many epochs (in tokens) and at the end; null = end only
 eval_limit: null               # smoke tests only: first N eval examples (sorted by id)

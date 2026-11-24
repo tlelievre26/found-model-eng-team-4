@@ -40,11 +40,11 @@ The same step, `tokens_seen` and GPU-hours are in the checkpoint's `metadata.jso
 
 Logged at each eval point (every `eval_every_epochs`, and at the end) on `eval_split` (`medmcqa:hp_dev` for the
 sweep). They are computed from the wrapper's letter probabilities (`QwenWrapper.score_batch`, which normalizes
-over the option letters only) by `src/eval/stub.py`, a stub until the #12 harness lands.
+over the option letters only) by the #12 harness, `src/eval` (`evaluate()`, metrics in `src/eval/metrics.py`).
 
 | Name | Meaning | How it is computed | What to look for |
 |---|---|---|---|
-| `nll` | Mean negative log-likelihood of the correct letter | `mean(−log p(gold))` over questions, with p normalized over the options | **The sweep's ranking metric** (lower is better). It rewards being right *and* confident in the right answer |
+| `nll` | Mean negative log-likelihood of the correct letter | `mean(−log p(gold))` over questions, with p normalized over the options and clipped at 1e-12 | **The sweep's ranking metric** (lower is better). It rewards being right *and* confident in the right answer |
 | `accuracy` | Accuracy | argmax letter equals the gold letter | Compare with the baseline run (`job_type` eval, `<group>-baseline-*`) |
 | `ece` | Expected calibration error | Confidence = max letter probability. 15 equal-width bins, `Σ (n_bin / n) × |accuracy_bin − confidence_bin|` (Guo et al. 2017) | Lower is better. SFT often lowers NLL while raising ECE (overconfidence) |
 | `n` | Number of questions evaluated | | 2,000 for hp_dev; fewer if `eval_limit` is set (smoke runs) |
