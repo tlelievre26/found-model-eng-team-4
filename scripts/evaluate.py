@@ -21,7 +21,8 @@ def main():
     parser.add_argument("--adapter", default=None, help="Local adapter folder; omit for base")
     parser.add_argument("--model-path", default=str(DEFAULT_MODEL_PATH))
     parser.add_argument("--data-dir", type=Path, default=paths.DATA_DIR)
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=16,
+                        help="Keep 16 for reported numbers; scores shift slightly with batch size")
     parser.add_argument("--n-bins", type=int, default=15)
     parser.add_argument("--limit", type=int, help="Smoke test only; omit for full baseline")
     parser.add_argument("--output", type=Path)

@@ -11,7 +11,7 @@ threshold selection. The standalone command logs through the shared W&B helper.
 | File | Purpose |
 |---|---|
 | `src/eval/metrics.py` | Pure `compute_metrics(probabilities, answers, n_bins=15)` function for variable-option predictions. |
-| `src/eval/evaluate.py` | `evaluate(model, examples, batch_size=8, ...)`: batch scoring, metric aggregation and optional JSONL/metadata output. |
+| `src/eval/evaluate.py` | `evaluate(model, examples, batch_size=16, ...)`: batch scoring, metric aggregation and optional JSONL/metadata output. |
 | `src/eval/__init__.py` | Exports `evaluate` and `compute_metrics`. |
 | `scripts/evaluate.py` | Select dataset, split, base model or adapter, and output; start/finish a standalone W&B evaluation run. |
 | `src/utils/paths.py` | Adds `EVAL_DIR` under the configurable shared root. |
@@ -42,17 +42,23 @@ from src.utils import wandb_logging as wl
 
 # Within an already active training run:
 wrapper = QwenWrapper(model=training_model, tokenizer=tokenizer)
-metrics = evaluate(wrapper, hp_dev_examples, batch_size=4)
+metrics = evaluate(wrapper, hp_dev_examples, batch_size=16)
 wl.log_eval(metrics)  # training keeps ownership of its W&B run
 # {"accuracy": ..., "nll": ..., "ece": ..., "n": ...}
 ```
+
+Use batch size 16 (the default, and the training config's `eval_batch_size`) for every
+reported number: padding changes the 4-bit/bf16 arithmetic, so scores shift slightly
+with batch size (on 100 hp_dev questions, batch 16 vs 1 differed by 0.013 per letter
+on average, with identical predictions). Evaluation is forward-only, so 16 fits easily
+(about 4 GiB peak on an A6000).
 
 Training ranks sweep trials by `nll` (lower is better). The wrapper restores
 training mode after scoring. Evaluation itself starts no W&B run. Optional
 arguments are `n_bins=15`, `output_path`, and `metadata`:
 
 ```python
-metrics = evaluate(wrapper, examples, batch_size=4,
+metrics = evaluate(wrapper, examples, batch_size=16,
                    output_path=output_file,
                    metadata={"dataset": "medmcqa", "split": "hp_dev"})
 ```

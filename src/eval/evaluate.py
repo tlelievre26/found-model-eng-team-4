@@ -5,12 +5,14 @@ from pathlib import Path
 from .metrics import compute_metrics
 
 
-def evaluate(model, examples, batch_size=8, *, n_bins=15, output_path=None,
+def evaluate(model, examples, batch_size=16, *, n_bins=15, output_path=None,
              metadata=None):
     """Score any common-format split; caller owns W&B run lifetime.
 
     Output JSONL contains predictions, not question text. A metadata sidecar
     identifies the model/data build. Existing outputs are never overwritten.
+    Scores shift slightly with batch size (padding changes the 4-bit/bf16 arithmetic),
+    so keep the default of 16 for every reported number.
     """
     examples = list(examples)
     if not examples:
