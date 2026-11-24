@@ -15,6 +15,7 @@ def test_default_shared_dir(monkeypatch):
     assert reloaded.HF_CACHE_DIR == Path("/shared/data/hf_cache")
     assert reloaded.CACHE_DIR == Path("/shared/data/cache")
     assert reloaded.CHECKPOINTS_DIR == Path("/shared/checkpoints")
+    assert reloaded.EVAL_DIR == Path("/shared/eval")
 
 
 def test_env_override(monkeypatch, tmp_path):
@@ -22,6 +23,7 @@ def test_env_override(monkeypatch, tmp_path):
     reloaded = importlib.reload(paths)
     assert reloaded.SHARED_DIR == tmp_path
     assert reloaded.MODELS_DIR == tmp_path / "models"
+    assert reloaded.EVAL_DIR == tmp_path / "eval"
     assert reloaded.SPLITS_DIR == tmp_path / "data" / "splits"
     assert reloaded.CACHE_DIR == tmp_path / "data" / "cache"
 
