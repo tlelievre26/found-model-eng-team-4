@@ -1,4 +1,4 @@
-# Issue #5: Qwen model wrapper
+# Qwen model wrapper (issue #5)
 
 ## What this does
 
@@ -32,8 +32,9 @@ Runtime: the team's pinned `torch`, `transformers`, `accelerate`, `bitsandbytes`
 | #11 data subsets | Use frozen `hp_dev` for tuning, `calib` for calibration, `thresh` for thresholds, and `test` for final reporting. Use the team-approved data build. |
 
 The real Qwen tokenizer passes the shared-prompt A–F boundary check. CUDA
-4-bit loading, ~100-question medical accuracy clearly above 25%, six-option
-real-data scoring, and real trained checkpoint evaluation remain pending. CPU tests do not establish these results.
+4-bit loading, ~100-question accuracy, six-option real-data scoring and trained
+checkpoint loading have been checked on a GPU with the pinned stack; see
+[GPU verification](#gpu-verification-insomnia-a6000) below.
 
 ## How others use it
 
@@ -69,17 +70,37 @@ model; injected PEFT models can be scored directly.
 
 ```sh
 python -m pytest -q
-QWEN_TOKENIZER_PATH=/path/to/local/model python -m pytest -s tests/test_qwen_tokenizer.py
+python -m pytest -s tests/test_qwen_tokenizer.py  # uses MODELS_DIR, or set QWEN_TOKENIZER_PATH
 WANDB_MODE=offline python scripts/validate_qwen.py --limit 100 --batch-size 4
 ```
 
 The validation script uses the team's existing W&B helper. On non-L4 hardware,
 pass the appropriate `--gpu-hourly-usd`. Real weights and data stay outside git.
 
-## Verification on this Mac
+## GPU verification (Insomnia A6000)
 
-Full local suite: **91 passed, 19 skipped**. Real shared-prompt Qwen tokenizer,
-tiny random Qwen3 mixed-length batching, and actual PEFT save/load passed.
-Skipped tests require real dataset builds. Local test environment: Python 3.11,
-torch 2.6.0, transformers 4.57.6, peft 0.18.1, accelerate 1.4.0. This is a
-compatibility check, not validation of the team's pinned CUDA stack.
+Run on 2026-11-24 on an NVIDIA RTX A6000 with the pinned stack (torch 2.14.1+cu126,
+transformers 5.23.0, peft 0.21.3, bitsandbytes 0.50.2), this branch merged with
+`main`, against the shared two-tier-v3 data build:
+
+- **Tests:** `python -m pytest --run-real-data` passed in full (112 tests), including
+  the real-tokenizer A–F check.
+- **`scripts/validate_qwen.py --limit 100 --batch-size 4`:** 4-bit model loads;
+  peak GPU memory 2.6 GiB allocated (3.9 GiB at batch size 16), well within the
+  L4's 24 GB. Accuracy on the first 100 MedMCQA `hp_dev` questions is 0.70
+  (chance is 0.25). Probabilities sum to 1, single and batched scores agree
+  within 1e-3, and a six-option MedAbstain question returns probabilities for
+  exactly A–F.
+- **Trained checkpoint:** a LoRA adapter saved by the #7 training branch loads
+  with `adapter_path=`, changes the scores, leaves the model in eval mode, and a
+  second adapter on the same wrapper is refused.
+- **Batch size and padding:** scores shift slightly with batch size, because
+  padding changes the 4-bit/bf16 arithmetic. On those 100 questions, batch 16
+  vs batch 1 differed by 0.013 per letter on average (0.17 at most) with
+  identical predictions. Use one fixed evaluation batch size for every reported
+  number.
+
+These are smoke checks of the wrapper, not benchmark results.
+
+Earlier, a CPU-only run on a Mac (torch 2.6.0, transformers 4.57.6, peft 0.18.1)
+also passed, including the tiny random Qwen3 batching and PEFT save/load tests.

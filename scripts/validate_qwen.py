@@ -33,6 +33,7 @@ def main():
                if len(x["options"]) == 6)
     if not examples:
         raise ValueError("The hp_dev split is empty")
+    torch.cuda.init()  # reset_peak_memory_stats fails before CUDA is initialized
     for device in range(torch.cuda.device_count()):
         torch.cuda.reset_peak_memory_stats(device)
     with wl.start_run("qwen-wrapper-smoke", vars(args) | {
