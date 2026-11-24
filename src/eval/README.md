@@ -66,8 +66,8 @@ metrics = evaluate(wrapper, examples, batch_size=16,
 JSONL records contain `id`, `source`, `probabilities`, `prediction`, `answer`,
 `confidence`, and `correct`; they omit question and option text. A `.meta.json`
 sidecar records metadata, bin count, and sample count. Existing files are never
-overwritten. The CLI records prompt version and checksums of split IDs and build
-statistics. Keep these local outputs in shared storage, not git/W&B artifacts.
+overwritten. The CLI records the model revision (the Hub commit of the downloaded model), prompt
+version, and checksums of split IDs and build statistics. Keep these local outputs in shared storage, not git/W&B artifacts.
 
 ECE uses 15 equal-width right-closed bins by default, matching the current
 training stub: `(i/B, (i+1)/B]`, with confidence 0 in the first bin. Confidence

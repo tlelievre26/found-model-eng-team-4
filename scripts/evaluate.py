@@ -14,6 +14,12 @@ from src.models.qwen import QwenWrapper, DEFAULT_MODEL_PATH, MODEL_ID
 from src.utils import paths, wandb_logging as wl
 
 
+def model_revision(model_path):
+    """Hub commit of a model downloaded with `hf download --local-dir`, or None if unknown."""
+    meta = Path(model_path) / ".cache" / "huggingface" / "download" / "config.json.metadata"
+    return meta.read_text().split()[0] if meta.is_file() else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=["medmcqa", "medqa"], default="medmcqa")
@@ -44,7 +50,8 @@ def main():
     split_file = args.data_dir / "splits" / f"{args.dataset}.json"
     stats_file = args.data_dir / "splits" / "stats.json"
     config = {"dataset": args.dataset, "split": args.split, "model_id": MODEL_ID,
-              "model_path": str(args.model_path), "adapter_path": args.adapter,
+              "model_path": str(args.model_path), "model_revision": model_revision(args.model_path),
+              "adapter_path": args.adapter,
               "prompt_version": PROMPT_VERSION, "batch_size": args.batch_size,
               "n_bins": args.n_bins, "limit": args.limit, "output": str(output),
               "split_ids_sha256": hashlib.sha256(split_file.read_bytes()).hexdigest(),
