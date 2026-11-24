@@ -17,7 +17,7 @@ def test_metrics_by_hand():
     assert got == pytest.approx({"accuracy": .5, "nll": -math.log(.16)/2,
                                 "ece": .3, "n": 2})
     assert compute_metrics([{"A": 1., "B": 0.}], ["A"])["ece"] == 0
-    assert math.isinf(compute_metrics([{"A": 1., "B": 0.}], ["B"])["nll"])
+    assert compute_metrics([{"A": 1., "B": 0.}], ["B"])["nll"] == pytest.approx(-math.log(1e-12))
 
 
 def test_calibrated_and_bin_edges():

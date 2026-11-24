@@ -1,12 +1,15 @@
 """Metrics over variable-option probability dictionaries; no model required."""
 import math
 
+# Floor on the gold probability, so one zero (float32 underflow) cannot make mean NLL infinite.
+NLL_MIN_PROB = 1e-12
+
 
 def compute_metrics(probabilities, answers, n_bins=15):
     """Return accuracy, natural-log NLL and top-label equal-width ECE.
 
     Bins are (i/B, (i+1)/B], with confidence 0 in the first bin.
-    Zero gold probability gives infinite NLL, rather than silently clipping it.
+    The gold probability is clipped at NLL_MIN_PROB, so NLL per question is at most -log(1e-12) ~ 27.6.
     """
     if isinstance(n_bins, bool) or not isinstance(n_bins, int) or n_bins < 1:
         raise ValueError("n_bins must be a positive integer")
@@ -25,7 +28,7 @@ def compute_metrics(probabilities, answers, n_bins=15):
         confidence = probs[prediction]
         hit = int(prediction == answer)
         correct += hit
-        losses.append(-math.log(probs[answer]) if probs[answer] > 0 else math.inf)
+        losses.append(-math.log(max(probs[answer], NLL_MIN_PROB)))
         i = min(max(math.ceil(confidence*n_bins) - 1, 0), n_bins-1)
         counts[i] += 1
         hits[i] += hit

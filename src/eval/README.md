@@ -1,4 +1,4 @@
-# Issue #12: Evaluation harness
+# Evaluation harness (issue #12)
 
 ## What this does
 
@@ -65,8 +65,10 @@ statistics. Keep these local outputs in shared storage, not git/W&B artifacts.
 
 ECE uses 15 equal-width right-closed bins by default, matching the current
 training stub: `(i/B, (i+1)/B]`, with confidence 0 in the first bin. Confidence
-1 is included. Ties choose the first letter alphabetically. A zero gold
-probability produces infinite NLL rather than a silently clipped value.
+1 is included. Ties choose the first letter alphabetically. The gold
+probability is clipped at 1e-12 before the log (`NLL_MIN_PROB`), so a probability
+that underflows to 0 adds at most about 27.6 to the sum instead of making the mean
+NLL infinite, which would break the sweep's ranking.
 
 ## Commands
 
