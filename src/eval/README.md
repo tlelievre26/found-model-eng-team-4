@@ -29,9 +29,8 @@ threshold selection. The standalone command logs through the shared W&B helper.
 - Uses `paths.DATA_DIR` / `paths.EVAL_DIR`; set `FME_SHARED_DIR` before Python.
 - Uses the existing `wandb_logging.start_run`, `log_eval`, and context-manager
   cleanup. Reuses `DEFAULT_GPU_HOURLY_USD`; pass the agreed rate on non-L4 GPUs.
-- #7's current training branch imports the temporary `src.eval.stub.evaluate`.
-  **When integrating #12, replace that line with `from src.eval import evaluate`.**
-  No other call-site change is required for its existing `run_eval()` function.
+- #7's training (`src/training/train.py`) and sweep (`scripts/run_sweep.py`) call
+  `evaluate()` for their hp_dev evaluations, inside the training run's W&B run.
 
 ## How others use it
 
@@ -69,8 +68,7 @@ sidecar records metadata, bin count, and sample count. Existing files are never
 overwritten. The CLI records the model revision (the Hub commit of the downloaded model), prompt
 version, and checksums of split IDs and build statistics. Keep these local outputs in shared storage, not git/W&B artifacts.
 
-ECE uses 15 equal-width right-closed bins by default, matching the current
-training stub: `(i/B, (i+1)/B]`, with confidence 0 in the first bin. Confidence
+ECE uses 15 equal-width right-closed bins by default: `(i/B, (i+1)/B]`, with confidence 0 in the first bin. Confidence
 1 is included. Ties choose the first letter alphabetically. The gold
 probability is clipped at 1e-12 before the log (`NLL_MIN_PROB`), so a probability
 that underflows to 0 adds at most about 27.6 to the sum instead of making the mean
@@ -98,11 +96,6 @@ standalone CLI W&B run in disabled mode, and reuse of an existing training run.
 Real Qwen tokenizer, tiny Qwen3 batching and PEFT save/load also pass.
 Local stack: Python 3.11, torch 2.6.0, transformers 4.57.6, peft 0.18.1,
 accelerate 1.4.0. Team dependency pins are unchanged; pinned CUDA validation is pending.
-
-In a temporary copy of the actual `training-pipeline` branch, replacing the stub
-import with this evaluator and overlaying the updated wrapper passed all **11
-training tests**, including checkpointing and exact resume. The teammate's remote
-training branch was not modified.
 
 Still pending: pretrained 4B GPU runs, full baseline results for MedMCQA hp_dev/test
 and MedQA test, real checkpoint evaluation on team hardware, and team-agreed

@@ -73,11 +73,14 @@ class RunLogger:
         tags: list[str] | None = None,
         job_type: str = "train",
         gpu_hourly_usd: float = DEFAULT_GPU_HOURLY_USD,
+        run_id: str | None = None,
+        step: int = 0,
+        tokens_seen: int = 0,
     ) -> None:
         self.gpu_hourly_usd = gpu_hourly_usd
         self.gpu_name = _gpu_name()
-        self.step = 0
-        self.tokens_seen = 0
+        self.step = step
+        self.tokens_seen = tokens_seen
         self._finished = False
 
         if torch.cuda.is_available():
@@ -98,12 +101,15 @@ class RunLogger:
             tags=tags,
             job_type=job_type,
             config=full_config,
+            # Resuming an interrupted run: same W&B run, continued from its last step.
+            id=run_id,
+            resume="allow" if run_id else None,
         )
         self._define_axes()
 
         self._start_time = time.perf_counter()
         self._last_log_time = self._start_time
-        self._last_log_tokens = 0
+        self._last_log_tokens = tokens_seen
 
     def _define_axes(self) -> None:
         """Tell W&B which x-axis each metric family is plotted against."""
@@ -236,7 +242,9 @@ def start_run(
         name: Run name shown in W&B, e.g. ``"lora-r16-lr2e-4"``.
         config: Run settings, as a dict or a dataclass.
         **kwargs: Optional ``project``, ``entity``, ``group``, ``tags``,
-            ``job_type`` (``"train"`` or ``"eval"``), ``gpu_hourly_usd``.
+            ``job_type`` (``"train"`` or ``"eval"``), ``gpu_hourly_usd``. To resume an
+            interrupted run, also pass its ``run_id`` and the ``step`` / ``tokens_seen``
+            it had reached.
 
     Returns:
         The :class:`RunLogger`, which can be used as a context manager.

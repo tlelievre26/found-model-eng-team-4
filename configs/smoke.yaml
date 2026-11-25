@@ -1,0 +1,17 @@
+# End-to-end check in a few minutes: 1,024 examples for 1.5 epochs (48 optimizer steps),
+# 3 kept checkpoints and 3 small hp_dev evals.
+#   python scripts/train.py --config configs/smoke.yaml
+base: base.yaml
+run_name: smoke
+wandb_group: smoke
+wandb_tags: [smoke]
+train_limit: 1024
+epochs: 1.5
+checkpoints_per_epoch: 2       # kept checkpoints at 0.5, 1.0 and 1.5 epochs
+warmup_steps: 5
+learning_rate: 2.0e-4
+eval_split: medmcqa:hp_dev
+eval_every_epochs: 0.5
+eval_limit: 64
+resume_every_minutes: 1.0
+log_every_steps: 2

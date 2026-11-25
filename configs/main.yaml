@@ -1,0 +1,8 @@
+# Main answer-only QLoRA run. The epoch budget and the checkpoint spacing are still to be settled
+# (docs/tuning_setup.md). Set learning_rate and lora_rank to the values the team picks from the sweep.
+base: base.yaml
+run_name: main-answer-only
+epochs: 6.0
+checkpoints_per_epoch: 1
+eval_split: medmcqa:hp_dev
+eval_every_epochs: 1.0

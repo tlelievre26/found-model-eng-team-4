@@ -154,6 +154,29 @@ WANDB_MODE=disabled python scripts/wandb_smoke_test.py   # W&B off, prints the s
 
 Use `WANDB_MODE=disabled` for quick local tests. Runs go to the `FME-project` project in the `tjl2152-columbia-university` team by default. To log somewhere else (e.g. a personal sandbox), set `WANDB_ENTITY` and/or `WANDB_PROJECT`, or pass `entity=` / `project=` to `start_run`.
 
+## Training and the hyperparameter sweep
+
+Answer-only QLoRA training (`scripts/train.py`) and the sequential sweep (`scripts/run_sweep.py`) share one
+training function and the configs in `configs/` (`base.yaml`, `smoke.yaml`, `sweep.yaml`, `main.yaml`). Any
+config key can be overridden per run as `key=value`. Re-running the same command resumes an interrupted run.
+
+```bash
+python scripts/train.py --config configs/smoke.yaml                    # end-to-end check, a few minutes
+python scripts/train.py --config configs/smoke.yaml run_name=smoke-r32 lora_rank=32
+python scripts/run_sweep.py --sweep configs/sweep.yaml                 # baseline eval + 9 trials
+```
+
+On Insomnia, submit the same through Slurm from the repo root (one A6000 on `pmg1`):
+
+```bash
+sbatch scripts/slurm/train.sbatch configs/smoke.yaml [key=value ...]
+sbatch scripts/slurm/sweep.sbatch configs/sweep.yaml
+```
+
+- [`docs/tuning_setup.md`](docs/tuning_setup.md): the grid, the fixed settings and why, the data budget,
+  checkpoints, resume, hardware, and how to convert to L4 GPU-hours.
+- [`docs/wandb_metrics.md`](docs/wandb_metrics.md): every metric the pipeline logs and what to look for.
+
 ## Team usage rules
 - **Work on a branch.** Clone into your own home directory, create a branch for your work, and merge into `main` through a pull request.
 - **Large files go in `/shared`, never in git.** This includes data, model weights, and checkpoints. MedAbstain's license (CC-BY-NC) means we must not re-upload it.

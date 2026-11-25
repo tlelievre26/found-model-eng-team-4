@@ -1,0 +1,13 @@
+# Hyperparameter grid, one trial after another in one job:
+#   python scripts/run_sweep.py --sweep configs/sweep.yaml
+# Outputs go to $CHECKPOINTS_DIR/sweep-<name>/<trial>/ and W&B group sweep-<name>. Trials are ranked by
+# eval/nll on hp_dev, and the team picks the final values by hand. See docs/tuning_setup.md.
+name: v1
+base_config: base.yaml          # relative to this file
+overrides:                      # shared by every trial
+  epochs: 0.25                  # about 3M tokens, about 40k questions per trial
+  eval_split: medmcqa:hp_dev
+  eval_every_epochs: 0.125      # hp_dev at the midpoint and the end of each trial
+grid:                           # run in this order, first key outermost
+  learning_rate: [5.0e-5, 1.0e-4, 2.0e-4]
+  lora_rank: [8, 16, 32]
