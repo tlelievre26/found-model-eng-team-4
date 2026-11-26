@@ -72,11 +72,8 @@ def test_wrong_prediction_count_rejected():
         evaluate(Missing(), [{'id': '1', 'options': {'A': 'a'}, 'answer': 'A'}])
 
 
-def test_cli_shared_loaders_and_existing_logging(monkeypatch, tmp_path):
-    import runpy
+def _cli_data(tmp_path):
     from src.data.medqa_datasets import data
-    from src.utils import wandb_logging as wl
-    from src.eval import evaluate as real_evaluate
     root = tmp_path / 'data'
     (root / 'splits').mkdir(parents=True)
     ex = {'id': 'medmcqa-1', 'source': 'medmcqa', 'question': 'synthetic',
@@ -86,6 +83,14 @@ def test_cli_shared_loaders_and_existing_logging(monkeypatch, tmp_path):
     (root / 'splits' / 'medmcqa.json').write_text(json.dumps(
         {key: [ex['id']] if key == 'hp_dev' else [] for key in data.split_names('medmcqa')}))
     (root / 'splits' / 'stats.json').write_text(json.dumps({'config': data.current_config()}))
+    return root, ex
+
+
+def test_cli_shared_loaders_and_existing_logging(monkeypatch, tmp_path):
+    import runpy
+    from src.utils import wandb_logging as wl
+    from src.eval import evaluate as real_evaluate
+    root, ex = _cli_data(tmp_path)
     from src.models import qwen
     seen = []
     class CLIWrapper(FakeWrapper):
@@ -104,6 +109,85 @@ def test_cli_shared_loaders_and_existing_logging(monkeypatch, tmp_path):
         assert real_evaluate(FakeWrapper(), [ex])['accuracy'] == 1
         wl.log_eval({'accuracy': 1.0})
         assert not logger._finished
+
+
+def _run_cli_with_compute(monkeypatch, tmp_path, adapter=None, metadata=None):
+    """Run the CLI on synthetic data; return (log_eval kwargs, saved config, run name, summary)."""
+    import runpy
+    from src.models import qwen
+    from src.utils import wandb_logging as wl
+    root, _ = _cli_data(tmp_path)
+    model = tmp_path / 'model'
+    (model / '.cache' / 'huggingface' / 'download').mkdir(parents=True)
+    (model / '.cache' / 'huggingface' / 'download' / 'config.json.metadata').write_text('rev-a\netag\n')
+    if metadata is not None:
+        adapter.mkdir()
+        (adapter / 'metadata.json').write_text(json.dumps(metadata))
+    logged, runs = [], []
+    real_log_eval, real_start_run = wl.log_eval, wl.start_run
+    def log_eval(metrics, **kwargs):
+        logged.append(kwargs)
+        real_log_eval(metrics, **kwargs)
+    def start_run(name, config, **kwargs):
+        runs.append(real_start_run(name, config, **kwargs))
+        return runs[-1]
+    monkeypatch.setattr(wl, 'log_eval', log_eval)
+    monkeypatch.setattr(wl, 'start_run', start_run)
+    monkeypatch.setattr(qwen, 'QwenWrapper', lambda **kwargs: FakeWrapper())
+    monkeypatch.setenv('WANDB_MODE', 'disabled')
+    out = tmp_path / 'predictions.jsonl'
+    argv = ['scripts/evaluate.py', '--data-dir', str(root), '--model-path', str(model),
+            '--output', str(out)]
+    monkeypatch.setattr(sys, 'argv', argv + (['--adapter', str(adapter)] if adapter else []))
+    runpy.run_path('scripts/evaluate.py', run_name='__main__')
+    config = json.loads(out.with_suffix('.jsonl.meta.json').read_text())['metadata']
+    return logged[0], config, runs[0].run.name, runs[0].run.summary
+
+
+def _checkpoint_metadata(**changes):
+    from src.data.medqa_datasets import PROMPT_VERSION
+    meta = {'step': 248, 'total_steps': 248, 'final': True, 'epoch': 0.05, 'tokens_seen': 593121,
+            'examples_seen': 7921, 'gpu_hours': 0.108, 'train_hours': 0.087, 'wall_clock_hours': 0.09,
+            'gpu_name': 'NVIDIA RTX A6000', 'wandb_run_id': 'abc123', 'resume_count': 0,
+            'git_commit': 'deadbeef', 'git_dirty': False, 'model_revision': 'rev-a',
+            'prompt_version': PROMPT_VERSION, 'dedupe_scheme': 'two-tier-v3',
+            'config': {'run_name': 'r32', 'lora_rank': 32, 'learning_rate': 2e-4, 'seed': 42}}
+    return {**meta, **changes}
+
+
+def test_cli_logs_checkpoint_compute(monkeypatch, tmp_path):
+    adapter = tmp_path / 'step-000248'
+    logged, config, name, summary = _run_cli_with_compute(
+        monkeypatch, tmp_path, adapter, _checkpoint_metadata())
+    assert logged == {'step': 248, 'tokens_seen': 593121}
+    ckpt = config['checkpoint']
+    assert ckpt['tokens_seen'] == 593121 and ckpt['gpu_hours'] == 0.108
+    assert ckpt['run_name'] == 'r32' and ckpt['lora_rank'] == 32 and ckpt['learning_rate'] == 2e-4
+    assert ckpt['gpu_name'] == 'NVIDIA RTX A6000' and ckpt['wandb_run_id'] == 'abc123'
+    assert 'seed' not in ckpt and config['model_revision'] == 'rev-a'
+    assert name.startswith('medmcqa-hp_dev-r32-step000248-')
+    assert summary['checkpoint/gpu_hours'] == 0.108
+
+
+def test_cli_base_model_is_zero_compute(monkeypatch, tmp_path):
+    logged, config, name, summary = _run_cli_with_compute(monkeypatch, tmp_path)
+    assert logged == {'step': 0, 'tokens_seen': 0}
+    assert config['checkpoint'] is None
+    assert name.startswith('medmcqa-hp_dev-base-')
+    assert summary['checkpoint/gpu_hours'] == 0
+
+
+@pytest.mark.parametrize('metadata, error', [
+    (None, 'metadata.json'),
+    (_checkpoint_metadata(model_revision='rev-b'), 'model revision'),
+    (_checkpoint_metadata(prompt_version='v0'), 'prompt version'),
+])
+def test_cli_rejects_bad_checkpoint(monkeypatch, tmp_path, metadata, error):
+    adapter = tmp_path / 'adapter'
+    if metadata is None:
+        adapter.mkdir()
+    with pytest.raises((FileNotFoundError, ValueError), match=error):
+        _run_cli_with_compute(monkeypatch, tmp_path, adapter, metadata)
 
 
 def test_ece_matches_training_stub_boundary_convention():
